@@ -1,0 +1,325 @@
+# =============================================================================================
+# bigmap - OUTDOOR (GPS terrain, DEM from the Spanish IGN or worldwide)
+# Launch: ros2 launch bigmap_bringup bigmap.launch.py config:=outdoor [lat:= lon:= radius:=] [sim:=true]   (a simulation: easynav_playground_bigmap)
+#   The launch runs the DEM generator (section 1), then starts EasyNav (and RViz).
+#   [GPS maps are the one thing the launch writes to ~/.ros/bigmap, with an overrides file that
+#   carries the path of the NavMap and the UKF origin of the generated place.]
+#
+# WHO OWNS WHAT. Each node block belongs to one plugin and only that plugin reads it, except the
+# SHARED VALUES below. [owner] tags in the comments say it again where it matters.
+#   dem_generator           navmap_gis_tool (navmap_tools), run by the launch [OUTDOOR ONLY]
+#   maps_manager_node.bonxai         easynav_bonxai_maps_manager: the map AMCL localizes on [SIMULATION]
+#   maps_manager_node.bigmap         easynav_bigmap_maps_manager (this repo): the NavMap at levels of detail
+#     .filters .inflation            easynav_navmap_maps_manager (plugins bigmap borrows)
+#   controller_node.<name>           easynav_regulated_pp_controller
+#   localizer_node.<name>            easynav_navmap_localizer (amcl) | easynav_fusion_localizer (ukf)
+#                                    | external
+#   planner_node.astar               easynav_navmap_planner
+#   sensors_node                     easynav_sensors
+#   system_node                      easynav_system
+#
+# SHARED VALUES (who defines it -> who reads it):
+#   system_node.robot_geometry.inscribed_radius -> every plugin (MethodBase), in particular bigmap's
+#       inflation filter: inflation_radius >= inscribed_radius
+#   bigmap.inflation.inflation_radius            -> bigmap too: NavCels this close to a border or an
+#       obstacle near the robot are as fine as cell_size.min
+#   maps_manager_node.bonxai (cloud, resolution) -> localizer_node.amcl (the map it localizes on)
+#   system_node.position_tolerance / angle_tolerance -> controller xy/yaw_goal_tolerance (keep equal)
+#   sensors_node.<sensor> (topic, frame)         -> bigmap's sensed obstacles, through the NavState
+#   use_sim_time: the same in EVERY node (true in simulation, false on the real robot)
+#
+# HOW OPTIONS ARE WRITTEN. `key: value   # [owner] what it is, unit, accepted values`. A NavMapFilter
+# has no switch of its own: it runs if it is in `filters` (2.4). Defaults are the plugin's; this file
+# gives the values of the scenario, and every option the plugin reads is in it.
+#
+# bigmap SECTIONS (2.x of maps_manager_node.bigmap):
+#   2.1 map              the NavMap file the levels of detail are made of
+#   2.2 levels of detail the cell sizes and the radii where they apply
+#   2.3 sensed obstacles what the sensors add, and how it is remembered and forgotten
+#   2.4 filters          the NavMap filters borrowed from easynav_navmap_maps_manager
+#
+# LENGTHS (metres), around the robot:
+#   bigmap.cell_size.min     NavCels at the borders and the obstacles within min_radius (and within
+#                            the inflation radius of them); the finest level is within min / 2
+#   bigmap.cell_size.max     the largest NavCel; far away the map is within max / 2
+#   bigmap.min_radius        within it the finest level (its tiles are min_radius / 2 square)
+#   bigmap.max_radius        from it the coarsest level; between the two the levels grow geometrically
+#   bigmap.sensor_range      sensor points farther than this are not used
+#   bigmap.forget_distance   sensed obstacles farther than this are forgotten
+#   in order: cell_size.min <= cell_size.max, min_radius < max_radius, sensor_range <= forget_distance
+# =============================================================================================
+
+# ---------------------------------------------------------------------------------------------
+# 1. DEM GENERATOR [OUTDOOR ONLY]: downloads the terrain (and imagery) once, writes the DEM (its
+#    origin is the UKF's) and the NavMap of the place that maps_manager_node.bigmap loads, then exits.
+#    Heights and imagery come from the IGN (Spain): free, no API key.
+# ---------------------------------------------------------------------------------------------
+dem_generator:
+  ros__parameters:
+    # --- where on Earth
+    gps_origin:
+      # Same origin as <spherical_coordinates> of easynav_playground_summit_worlds/worlds/urjc_excavation.world
+      latitude: 40.284796      # WGS84 deg  (map-frame origin = Gazebo world origin)
+      longitude: -3.821407     # WGS84 deg
+      altitude: 0.0            # m ASL mapped to z = 0; 0.0 -> DEM elevation at the origin (keeps the
+                               # mesh under the robot, which spawns on the ground at the origin)
+    download_radius: 500.0     # m, half-side of the square area around the origin
+    # --- heights
+    # Where the heights come from:
+    #   ign           - Spanish IGN terrain model (PNOA-LiDAR), 5 m native, free, no key, Spain only
+    #   copernicus30  - worldwide, free, no key: Copernicus DEM GLO-30, 30 m
+    #   mesh          - a survey mesh (STL) in the map's frame: mesh_file, mesh_world_elevation
+    #   synthetic     - fake terrain for tests (or use_synthetic_terrain: true)
+    # The source is queried every elevation_resolution m (0 = its native spacing: ign 5,
+    # copernicus30 30)
+    # and the result is bicubically interpolated to grid_resolution: finer = smoother terrain and
+    # small NavCels near the robot, NOT more real detail.
+    elevation_source: ign
+    elevation_resolution: 0.0  # m between queries (0 = native)
+    grid_resolution: 1.0       # m between nodes of the DEM / smallest NavCel (radius 500 -> 1001^2)
+    use_synthetic_terrain: false  # true -> offline fake terrain (tests/demos, no network)
+    # --- satellite image draped on the mesh
+    imagery:
+      enabled: true
+      # ign    - Spanish PNOA orthophoto: free, no key, ~0.25 m, Spain only
+      source: ign              # ign (Spain) | xyz (any tile server: set url_template) | auto (= ign)
+      url_template: ""         # xyz only: https://<server>/<path>/{z}/{y}/{x}. No default: the server
+                               # and its terms of use are your choice. Outside Spain and without
+                               # it, set enabled: false (no colours)
+      zoom: 18                 # ~0.45 m per point at 40N; 16 tiles for the default 1 km area
+      scale: 2                 # 1 or 2 (pixel density per tile)
+      max_tiles: 100           # safety cap on the number of requests
+    # --- Gazebo terrain: the launch also sets gazebo.export / world_template / world_file: it
+    #     exports this same DEM as the Gazebo terrain (collision STL + textured OBJ), so the robot
+    #     drives on the NavMap's relief
+    gazebo:
+      terrain_dir: "~/.ros/bigmap/gazebo"
+      terrain_resolution: 4.0  # m: Gazebo collision mesh (coarser than the grid: millions of triangles)
+    # --- files and output
+    cache_file: "~/.ros/bigmap/elevation_cache.bin"  # the DEM (heights and origin, the UKF's): not
+                               # downloaded again on restart while the place and options are the same
+    navmap_file: "~/.ros/bigmap/place.navmap"   # the NavMap of the place, made from the DEM at every
+                               # launch (two NavCels per grid_resolution cell): what the maps manager
+                               # loads (maps_manager_node.bigmap.navmap_path_file, set by the launch)
+    max_slope_deg: 25.0        # deg: steeper ground is left out of that NavMap (not traversable)
+
+# ---------------------------------------------------------------------------------------------
+# 2. MAPS MANAGER = easynav_bigmap_maps_manager/BigMapMapsManager (a NavMap at levels of detail)
+# ---------------------------------------------------------------------------------------------
+maps_manager_node:
+  ros__parameters:
+    use_sim_time: true
+    map_types: [bigmap]
+    bigmap:
+      plugin: easynav_bigmap_maps_manager/BigMapMapsManager   # [bigmap] the plugin of this repo
+      freq: 10.0                 # [easynav] Hz of update(): sensed obstacles, the map again, filters
+
+      # ======================================================================================
+      # 2.1 MAP [bigmap]: the NavMap the levels of detail are made of (once, at start, on every
+      #   core: cut into tiles of min_radius / 2, each simplified at every level)
+      # ======================================================================================
+      package: ""                # "": navmap_path_file is a path; a package name: it is
+                                 # relative to that package's share directory (like bonxai's)
+      navmap_path_file: "~/.ros/bigmap/place.navmap" # [OUTDOOR] dem_generator.navmap_file: the launch makes it and gives its path
+
+      # ======================================================================================
+      # 2.2 LEVELS OF DETAIL [bigmap]: fine around the robot, coarse far away
+      # ======================================================================================
+      cell_size:
+        min: 1.0                 # m: NavCels at the borders and obstacles near the robot: the DEM's grid_resolution
+        max: 8.0                 # m, >= min: the largest NavCel; far away the map is within max / 2
+      min_radius: 15.0           # m: within it the finest level (and the sensed obstacles' detail)
+      max_radius: 60.0           # m, > min_radius: from it the coarsest level; geometric in between
+      rebuild_period: 0.5        # s: the map is made again at most this often (when the robot has
+                                 # moved min_radius / 4, its tiles change or the sensed obstacles do)
+
+      # ======================================================================================
+      # 2.3 SENSED OBSTACLES [bigmap]: points of the perceptions above the map's surface under
+      #   them, near the robot. A point over no surface (a hole: a rack, a building), or next to
+      #   one, is the map's own obstacle and is left out.
+      # ======================================================================================
+      sensor_range: 15.0         # m, <= forget_distance: farther points are not used (0 = min_radius)
+      obstacle_min_height: 0.2   # m above the map's surface: lower points are the ground
+      obstacle_min_height_per_meter: 0.05   # obstacle_min_height grows this much per metre from
+                                 # the robot (a slight tilt of the robot or the sensor puts the far
+                                 # ground above it)
+      obstacle_max_height: 1.2   # m: higher points do not touch the robot (its height)
+      forget_distance: 60.0      # m: sensed obstacles farther than this are forgotten (0 = max_radius)
+      memory:                    # evidence per cell of cell_size.min / 2, in log-odds (as OctoMap)
+        clearing: true           # rays from the robot through a sensed obstacle clear it (it moved away)
+        decay_time: 0.0          # s: forgotten when not seen again for this long (0: never)
+        p_hit: 0.7               # (0.5, 1): after a point on the cell (0.7: one sighting marks it)
+        p_miss: 0.4              # (0, 0.5): after a ray through it
+
+      # ======================================================================================
+      # 2.4 NAVMAP FILTERS [easynav_navmap_maps_manager]: plugins bigmap borrows, run on the map
+      #   every cycle. `filters` is the ONLY on/off switch of each of them: a filter runs if and
+      #   only if it is listed here (and has `<name>.plugin`). A* reads `inflated_obstacles`.
+      # ======================================================================================
+      filters: [inflation]
+      inflation:
+        plugin: easynav_navmap_maps_manager/NavMapMapsManager/InflationFilter
+        # NavCels within system_node.robot_geometry.inscribed_radius of an obstacle are blocked
+        # (shared: system_node defines it, this filter reads it); up to inflation_radius the cost
+        # decays and keeps the paths away from obstacles (and from the map border). bigmap makes
+        # the NavCels within inflation_radius of a border or an obstacle near the robot fine too
+        inflation_radius: 2.0      # m, >= system_node.robot_geometry.inscribed_radius
+        cost_scaling_factor: 1.5   # >0: how fast the cost decays with the distance
+
+# ---------------------------------------------------------------------------------------------
+# 3. CONTROLLER [easynav_regulated_pp_controller]: Regulated Pure Pursuit (same in all scenarios).
+#    Nothing of bigmap's own is read here.
+# ---------------------------------------------------------------------------------------------
+controller_node:
+  ros__parameters:
+    use_sim_time: true
+    robot_limits:
+      max_linear_vel: 1.0
+      min_linear_vel: -0.2
+      max_angular_vel: 1.0
+      max_linear_acc: 0.5
+      max_linear_decel: 1.0
+      max_angular_acc: 1.0
+      max_angular_decel: 2.0
+    controller_types: [regulated]
+    regulated:
+      rt_freq: 30.0
+      plugin: easynav_regulated_pp_controller/RegulatedPurePursuitController
+      # Area where obstacles regulate the velocity.
+      safety_margin: 0.1
+      use_dynamic_window: false
+      allow_reversing: false
+      # Lookahead, scaled for the Summit XL
+      lookahead_dist: 1.0
+      min_lookahead_dist: 0.5
+      max_lookahead_dist: 1.5
+      lookahead_time: 1.5
+      use_velocity_scaled_lookahead_dist: true
+      # Rotate to heading
+      use_rotate_to_heading: true
+      rotate_to_heading_angular_vel: 0.8
+      rotate_to_heading_min_angle: 0.785
+      # Curvature regulation
+      use_regulated_linear_velocity_scaling: true
+      regulated_linear_scaling_min_radius: 1.5
+      regulated_linear_scaling_min_speed: 0.2
+      use_fixed_curvature_lookahead: false
+      curvature_lookahead_dist: 1.5
+      interpolate_curvature_after_goal: false
+      # Obstacle-proximity regulation
+      use_obstacle_regulated_linear_velocity_scaling: true
+      obstacle_scaling_dist: 1.0
+      z_min_filter: 0.3           # ignore the ground seen by the 3D lidar and the depth camera
+      obstacle_scaling_gain: 0.8
+      # Approach to goal
+      min_approach_linear_velocity: 0.05
+      approach_velocity_scaling_dist: 1.0
+      # Goal tolerances (system_node: 0.3 m / 0.15 rad)
+      xy_goal_tolerance: 0.3
+      yaw_goal_tolerance: 0.15
+
+# ---------------------------------------------------------------------------------------------
+# 4. LOCALIZER [OUTDOOR] [easynav_fusion_localizer]: GPS + wheel odometry + IMU, UKF (FusionLocalizer)
+# ---------------------------------------------------------------------------------------------
+localizer_node:
+  ros__parameters:
+    use_sim_time: true
+    localizer_types: [ukf]
+    ukf:
+      rt_freq: 50.0
+      freq: 5.0
+      plugin: easynav_fusion_localizer/FusionLocalizer
+      # Same origin as gps_origin above: map (0, 0) is the spawn. The launch overrides these three
+      # with the exact origin of the exported Gazebo world (easynav_overrides.yaml, generated).
+      latitude_origin: 40.284796
+      longitude_origin: -3.821407
+      altitude_origin: 0.0
+      # Global filter only: map -> odom from GPS, wheel odometry and IMU heading.
+      # odom -> base_footprint is the wheel odometry's own TF (diff drive controller).
+      global_filter:
+        two_d_mode: false         # 3D: the robot climbs the terrain, so z (and roll/pitch) matter
+        # Without this the filter never ticks its frequency diagnostic, which then reports
+        # "odometry/filtered: no events recorded, 0 Hz" even when it works
+        print_diagnostics: true
+        # The filter is stepped at the plugin's rt_freq (50 Hz): that is the rate its frequency
+        # diagnostic should expect (the default, 30 Hz, makes it warn "frequency too high"). The
+        # sensor timeout defaults to 1 / frequency, so it is kept at what it was with 30 Hz.
+        frequency: 50.0
+        sensor_timeout: 0.0333
+        publish_tf: true
+        transform_timeout: 0.1
+        map_frame: map
+        odom_frame: odom
+        base_link_frame: base_footprint
+        world_frame: map
+        gps0: /gps/fix
+        gps0_config: [true,  true,  true,   false, false, false,
+                      false, false, false,  false, false, false,
+                      false, false, false]
+        gps0_differential: false
+        odom0: /robotnik_base_control/odom
+        odom0_config: [false, false, false,  false, false, false,
+                       true,  true,  true,   false, false, true,
+                       false, false, false]
+        odom0_differential: false
+        imu0: /imu/data
+        imu0_config: [false, false, false,  true,  true,  true,
+                      false, false, false,  false, false, true,
+                      false, false, false]
+        imu0_differential: false
+        imu0_remove_gravitational_acceleration: true
+
+# ---------------------------------------------------------------------------------------------
+# 5. PLANNER [easynav_navmap_planner]: A* over the NavMap (same in all scenarios).
+#    Cost layer: `inflated_obstacles` if bigmap.filters has the inflation, else `obstacles`.
+# ---------------------------------------------------------------------------------------------
+planner_node:
+  ros__parameters:
+    use_sim_time: true
+    planner_types: [astar]
+    astar:
+      freq: 1.0
+      plugin: easynav_navmap_planner/AStarPlanner
+      # the map changes with the robot's position (level of detail): keep the path being followed
+      # while its first replan_hysteresis_horizon m are traversable, unless a new one is 20 %
+      # shorter (0: always the new one; horizon 0: the whole path is checked)
+      replan_hysteresis: 0.2
+      replan_hysteresis_horizon: 20.0    # m, ~ bigmap min_radius: beyond it the map is coarse and changes
+
+# ---------------------------------------------------------------------------------------------
+# 6. SENSORS [easynav_sensors] [OUTDOOR]: lidar + IMU + GPS (the camera is declared but not used)
+# ---------------------------------------------------------------------------------------------
+sensors_node:
+  ros__parameters:
+    use_sim_time: true
+    forget_time: 0.5
+    sensors: [laser, imu, gps]
+    perception_default_frame: odom
+    laser:
+      topic: front_laser/points
+      type: sensor_msgs/msg/PointCloud2
+    camera:
+      topic: front_camera/depth/color/points
+      type: sensor_msgs/msg/PointCloud2
+    imu:
+      topic: imu/data
+      type: sensor_msgs/msg/Imu
+    gps:
+      topic: gps/fix
+      type: sensor_msgs/msg/NavSatFix
+      group: gnss               # the FusionLocalizer reads the GNSS perceptions from this group
+
+# ---------------------------------------------------------------------------------------------
+# 7. SYSTEM [easynav_system]
+# ---------------------------------------------------------------------------------------------
+system_node:
+  ros__parameters:
+    use_sim_time: true
+    use_real_time: true
+    rt_freq: 50.0
+    position_tolerance: 0.3
+    angle_tolerance: 0.15
+    robot_geometry:               # SHARED: read by every plugin; bigmap.inflation.inflation_radius >= inscribed_radius
+      radius: 0.7                 # m
+      inscribed_radius: 0.7       # m: NavCels closer than this to an obstacle are blocked
+      height: 1.0                 # m

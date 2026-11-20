@@ -1,0 +1,12 @@
+# Companion repositories, cloned here but versioned in their own repos (never pushed to BigMap)
+/bigmap_experiments/
+/paper-bigmap/
+
+# ROS 2 build files
+build/
+install/
+log/
+
+# Editors / Python
+/.vscode/
+**/__pycache__/

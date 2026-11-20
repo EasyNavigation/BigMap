@@ -1,0 +1,25 @@
+# Dependencies of BigMap, at the versions of the article's experiments (bigmap_experiments,
+# tag bigmap-experiments-v2). From the workspace root:
+#   vcs import src < src/BigMap/bigmap.repos
+repositories:
+  EasyNavigation:
+    type: git
+    url: https://github.com/EasyNavigation/EasyNavigation.git
+    version: rolling
+  yaets:
+    type: git
+    url: https://github.com/fmrico/yaets.git
+    version: rolling
+  # NavMap: rolling + #45 (buildings, large NavMaps of a place: navmap_gis_tool --navmap-out),
+  # #46 (simplify bounds that change from place to place), #47 (keep_vertices, cut_along_lines,
+  # refine), geometry patches and chunked RViz meshes. Fork until merged in EasyNavigation/NavMap.
+  NavMap:
+    type: git
+    url: https://github.com/jmguerreroh/NavMap.git
+    version: fractal-ws
+  # easynav_playground_geo (+ the Summit XL). Fork until the playground_geo PR is merged in
+  # EasyNavigation/easynav_playgrounds.
+  easynav_playgrounds:
+    type: git
+    url: https://github.com/jmguerreroh/easynav_playgrounds.git
+    version: playground_geo
