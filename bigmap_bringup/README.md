@@ -15,6 +15,15 @@ Two commands, always:
 ros2 launch bigmap_bringup bigmap.launch.py config:=<use case>
 ```
 
+The launch is only a shorthand. Without it, the second command is EasyNav with the parameter file,
+and RViz:
+
+```bash
+SHARE=$(ros2 pkg prefix bigmap_bringup)/share/bigmap_bringup
+ros2 run easynav_system system_main --ros-args --params-file $SHARE/config/params_<use case>.yaml
+ros2 run rviz2 rviz2 -d $SHARE/rviz/bigmap.rviz
+```
+
 To use the plugin without this package, see the README of `easynav_bigmap_maps_manager`: its
 parameters, how it works and what it costs.
 

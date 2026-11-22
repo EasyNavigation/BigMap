@@ -65,6 +65,14 @@ ros2 launch easynav_playground_geo_worlds geo_sim.launch.py lat:=40.4168 lon:=-3
 ros2 launch bigmap_bringup bigmap.launch.py config:=outdoor
 ```
 
+The second command is only a shorthand for EasyNav with that parameter file, plus RViz:
+
+```bash
+SHARE=$(ros2 pkg prefix bigmap_bringup)/share/bigmap_bringup
+ros2 run easynav_system system_main --ros-args --params-file $SHARE/config/params_outdoor.yaml
+ros2 run rviz2 rviz2 -d $SHARE/rviz/bigmap.rviz
+```
+
 See [`bigmap_bringup`](bigmap_bringup/README.md) for the use cases, how to make the NavMap of a
 place, and every parameter, and [`easynav_bigmap_maps_manager`](easynav_bigmap_maps_manager/README.md)
 for how the plugin works and what it costs.
