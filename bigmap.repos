@@ -10,6 +10,12 @@ repositories:
     type: git
     url: https://github.com/fmrico/yaets.git
     version: rolling
+  # easynav_plugins: tag bigmap-experiments-v2 (the article's) without easynav_bigmap_maps_manager,
+  # which is BigMap's. Fork until merged in EasyNavigation/easynav_plugins (#182, #183).
+  easynav_plugins:
+    type: git
+    url: https://github.com/jmguerreroh/easynav_plugins.git
+    version: bigmap
   # NavMap: rolling + #45 (buildings, large NavMaps of a place: navmap_gis_tool --navmap-out and
   # --navmap-keep), #46 (simplify bounds that change from place to place), #47 (keep_vertices,
   # cut_along_lines, refine), geometry patches and chunked RViz meshes. Branch bigmap: fractal-ws,

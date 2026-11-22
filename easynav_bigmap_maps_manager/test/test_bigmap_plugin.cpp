@@ -22,6 +22,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -459,4 +460,20 @@ TEST_F(BigMapPluginTest, FarAwayTheInscribedCostIsACostNotABarrier)
   EXPECT_GT(near_inscribed, 0u);
   EXPECT_EQ(far_inscribed, 0u);
   EXPECT_GT(far_softened, 0u);
+}
+
+TEST_F(BigMapPluginTest, TheMapFileMayStartWithTheHomeDirectory)
+{
+  // navmap_path_file "~/..." (no package) is in the home directory, as a shell would read it
+  const std::filesystem::path real = map_file_;
+  const char * home = std::getenv("HOME");
+  const std::string saved = home ? home : "";
+  ::setenv("HOME", real.parent_path().c_str(), 1);
+  map_file_ = "~/" + real.filename().string();
+  auto p = make();
+  map_file_ = real.string();
+  if (saved.empty()) {::unsetenv("HOME");} else {::setenv("HOME", saved.c_str(), 1);}
+  robot_at(10.0, 20.0);
+  run(*p, false, 0.3);
+  EXPECT_GT(map().navcels.size(), 0u);
 }

@@ -6,7 +6,6 @@
 #
 # WHO OWNS WHAT. Each node block belongs to one plugin and only that plugin reads it, except the
 # SHARED VALUES below. [owner] tags in the comments say it again where it matters.
-#   dem_generator           navmap_gis_tool (navmap_tools), run by the launch [OUTDOOR ONLY]
 #   maps_manager_node.bonxai         easynav_bonxai_maps_manager: the map AMCL localizes on [SIMULATION]
 #   maps_manager_node.bigmap         easynav_bigmap_maps_manager (this repo): the NavMap at levels of detail
 #     .filters .inflation            easynav_navmap_maps_manager (plugins bigmap borrows)
@@ -28,14 +27,14 @@
 #   use_sim_time: the same in EVERY node (true in simulation, false on the real robot)
 #
 # HOW OPTIONS ARE WRITTEN. `key: value   # [owner] what it is, unit, accepted values`. A NavMapFilter
-# has no switch of its own: it runs if it is in `filters` (2.4). Defaults are the plugin's; this file
+# has no switch of its own: it runs if it is in `filters` (1.4). Defaults are the plugin's; this file
 # gives the values of the scenario, and every option the plugin reads is in it.
 #
-# bigmap SECTIONS (2.x of maps_manager_node.bigmap):
-#   2.1 map              the NavMap file the levels of detail are made of
-#   2.2 levels of detail the cell sizes and the radii where they apply
-#   2.3 sensed obstacles what the sensors add, and how it is remembered and forgotten
-#   2.4 filters          the NavMap filters borrowed from easynav_navmap_maps_manager
+# bigmap SECTIONS (1.x of maps_manager_node.bigmap):
+#   1.1 map              the NavMap file the levels of detail are made of
+#   1.2 levels of detail the cell sizes and the radii where they apply
+#   1.3 sensed obstacles what the sensors add, and how it is remembered and forgotten
+#   1.4 filters          the NavMap filters borrowed from easynav_navmap_maps_manager
 #
 # LENGTHS (metres), around the robot:
 #   bigmap.cell_size.min     NavCels at the borders and the obstacles within min_radius (and within
@@ -49,11 +48,7 @@
 # =============================================================================================
 
 # ---------------------------------------------------------------------------------------------
-# 1. DEM GENERATOR [navmap_gis_tool] [OUTDOOR ONLY]: nothing here, the map is a file (bigmap.navmap_path_file).
-# ---------------------------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------------------------
-# 2. MAPS MANAGER = easynav_bigmap_maps_manager/BigMapMapsManager (a NavMap at levels of detail)
+# 1. MAPS MANAGER = easynav_bigmap_maps_manager/BigMapMapsManager (a NavMap at levels of detail)
 # ---------------------------------------------------------------------------------------------
 maps_manager_node:
   ros__parameters:
@@ -64,7 +59,7 @@ maps_manager_node:
       freq: 10.0                 # [easynav] Hz of update(): sensed obstacles, the map again, filters
 
       # ======================================================================================
-      # 2.1 MAP [bigmap]: the NavMap the levels of detail are made of (once, at start, on every
+      # 1.1 MAP [bigmap]: the NavMap the levels of detail are made of (once, at start, on every
       #   core: cut into tiles of min_radius / 2, each simplified at every level)
       # ======================================================================================
       package: ""                # "": navmap_path_file is a path; a package name: it is
@@ -72,7 +67,7 @@ maps_manager_node:
       navmap_path_file: ""       # YOUR NavMap file (floors over each other, ramps): set it
 
       # ======================================================================================
-      # 2.2 LEVELS OF DETAIL [bigmap]: fine around the robot, coarse far away
+      # 1.2 LEVELS OF DETAIL [bigmap]: fine around the robot, coarse far away
       # ======================================================================================
       cell_size:
         min: 0.4                 # m: NavCels at the borders and obstacles near the robot
@@ -83,7 +78,7 @@ maps_manager_node:
                                  # moved min_radius / 4, its tiles change or the sensed obstacles do)
 
       # ======================================================================================
-      # 2.3 SENSED OBSTACLES [bigmap]: points of the perceptions above the map's surface under
+      # 1.3 SENSED OBSTACLES [bigmap]: points of the perceptions above the map's surface under
       #   them, near the robot. A point over no surface (a hole: a rack, a building), or next to
       #   one, is the map's own obstacle and is left out.
       # ======================================================================================
@@ -101,7 +96,7 @@ maps_manager_node:
         p_miss: 0.4              # (0, 0.5): after a ray through it
 
       # ======================================================================================
-      # 2.4 NAVMAP FILTERS [easynav_navmap_maps_manager]: plugins bigmap borrows, run on the map
+      # 1.4 NAVMAP FILTERS [easynav_navmap_maps_manager]: plugins bigmap borrows, run on the map
       #   every cycle. `filters` is the ONLY on/off switch of each of them: a filter runs if and
       #   only if it is listed here (and has `<name>.plugin`). A* reads `inflated_obstacles`.
       # ======================================================================================
@@ -116,7 +111,7 @@ maps_manager_node:
         cost_scaling_factor: 1.5   # >0: how fast the cost decays with the distance
 
 # ---------------------------------------------------------------------------------------------
-# 3. CONTROLLER [easynav_regulated_pp_controller]: Regulated Pure Pursuit (same in all scenarios).
+# 2. CONTROLLER [easynav_regulated_pp_controller]: Regulated Pure Pursuit (same in all scenarios).
 #    Nothing of bigmap's own is read here.
 # ---------------------------------------------------------------------------------------------
 controller_node:
@@ -168,7 +163,7 @@ controller_node:
       yaw_goal_tolerance: 0.15
 
 # ---------------------------------------------------------------------------------------------
-# 4. LOCALIZER [REAL ROBOT] [external]: the robot is localized by something else, which must give the TF
+# 3. LOCALIZER [REAL ROBOT] [external]: the robot is localized by something else, which must give the TF
 #    map -> odom (odom -> base_footprint -> base_link comes from the robot). The simulations
 #    (params_parking_garage.yaml, params_large_warehouse.yaml) use AMCL instead.
 # ---------------------------------------------------------------------------------------------
@@ -182,7 +177,7 @@ localizer_node:
       plugin: easynav_localizer/DummyLocalizer
 
 # ---------------------------------------------------------------------------------------------
-# 5. PLANNER [easynav_navmap_planner]: A* over the NavMap (same in all scenarios).
+# 4. PLANNER [easynav_navmap_planner]: A* over the NavMap (same in all scenarios).
 #    Cost layer: `inflated_obstacles` if bigmap.filters has the inflation, else `obstacles`.
 # ---------------------------------------------------------------------------------------------
 planner_node:
@@ -199,7 +194,7 @@ planner_node:
       replan_hysteresis_horizon: 5.0    # m, ~ bigmap min_radius: beyond it the map is coarse and changes
 
 # ---------------------------------------------------------------------------------------------
-# 6. SENSORS [easynav_sensors] [INDOOR]: the robot's 3D lidar only
+# 5. SENSORS [easynav_sensors] [INDOOR]: the robot's 3D lidar only
 # ---------------------------------------------------------------------------------------------
 sensors_node:
   ros__parameters:
@@ -212,7 +207,7 @@ sensors_node:
       type: sensor_msgs/msg/PointCloud2
 
 # ---------------------------------------------------------------------------------------------
-# 7. SYSTEM [easynav_system]
+# 6. SYSTEM [easynav_system]
 # ---------------------------------------------------------------------------------------------
 system_node:
   ros__parameters:

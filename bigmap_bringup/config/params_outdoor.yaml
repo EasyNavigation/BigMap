@@ -1,13 +1,12 @@
 # =============================================================================================
-# bigmap - OUTDOOR (GPS terrain, DEM from the Spanish IGN or worldwide)
-# Launch: ros2 launch bigmap_bringup bigmap.launch.py config:=outdoor [lat:= lon:= radius:=] [sim:=true]   (a simulation: easynav_playground_bigmap)
-#   The launch runs the DEM generator (section 1), then starts EasyNav (and RViz).
-#   [GPS maps are the one thing the launch writes to ~/.ros/bigmap, with an overrides file that
-#   carries the path of the NavMap and the UKF origin of the generated place.]
+# bigmap - OUTDOOR (GPS: a NavMap of a place, made beforehand from its terrain)
+# Launch: ros2 launch bigmap_bringup bigmap.launch.py config:=outdoor   (after the simulation or the robot)
+#   The NavMap is bigmap.navmap_path_file (by default ~/.ros/bigmap/place.navmap, made with
+#   navmap_gis_tool: see the README) and the UKF origin is localizer_node.ukf.*_origin: both are the
+#   place's, set them for yours.
 #
 # WHO OWNS WHAT. Each node block belongs to one plugin and only that plugin reads it, except the
 # SHARED VALUES below. [owner] tags in the comments say it again where it matters.
-#   dem_generator           navmap_gis_tool (navmap_tools), run by the launch [OUTDOOR ONLY]
 #   maps_manager_node.bonxai         easynav_bonxai_maps_manager: the map AMCL localizes on [SIMULATION]
 #   maps_manager_node.bigmap         easynav_bigmap_maps_manager (this repo): the NavMap at levels of detail
 #     .filters .inflation            easynav_navmap_maps_manager (plugins bigmap borrows)
@@ -29,14 +28,14 @@
 #   use_sim_time: the same in EVERY node (true in simulation, false on the real robot)
 #
 # HOW OPTIONS ARE WRITTEN. `key: value   # [owner] what it is, unit, accepted values`. A NavMapFilter
-# has no switch of its own: it runs if it is in `filters` (2.4). Defaults are the plugin's; this file
+# has no switch of its own: it runs if it is in `filters` (1.4). Defaults are the plugin's; this file
 # gives the values of the scenario, and every option the plugin reads is in it.
 #
-# bigmap SECTIONS (2.x of maps_manager_node.bigmap):
-#   2.1 map              the NavMap file the levels of detail are made of
-#   2.2 levels of detail the cell sizes and the radii where they apply
-#   2.3 sensed obstacles what the sensors add, and how it is remembered and forgotten
-#   2.4 filters          the NavMap filters borrowed from easynav_navmap_maps_manager
+# bigmap SECTIONS (1.x of maps_manager_node.bigmap):
+#   1.1 map              the NavMap file the levels of detail are made of
+#   1.2 levels of detail the cell sizes and the radii where they apply
+#   1.3 sensed obstacles what the sensors add, and how it is remembered and forgotten
+#   1.4 filters          the NavMap filters borrowed from easynav_navmap_maps_manager
 #
 # LENGTHS (metres), around the robot:
 #   bigmap.cell_size.min     NavCels at the borders and the obstacles within min_radius (and within
@@ -50,65 +49,7 @@
 # =============================================================================================
 
 # ---------------------------------------------------------------------------------------------
-# 1. DEM GENERATOR [OUTDOOR ONLY]: downloads the terrain (and imagery) once, writes the DEM (its
-#    origin is the UKF's) and the NavMap of the place that maps_manager_node.bigmap loads, then exits.
-#    Heights and imagery come from the IGN (Spain): free, no API key.
-# ---------------------------------------------------------------------------------------------
-dem_generator:
-  ros__parameters:
-    # --- where on Earth
-    gps_origin:
-      # Same origin as <spherical_coordinates> of easynav_playground_summit_worlds/worlds/urjc_excavation.world
-      latitude: 40.284796      # WGS84 deg  (map-frame origin = Gazebo world origin)
-      longitude: -3.821407     # WGS84 deg
-      altitude: 0.0            # m ASL mapped to z = 0; 0.0 -> DEM elevation at the origin (keeps the
-                               # mesh under the robot, which spawns on the ground at the origin)
-    download_radius: 500.0     # m, half-side of the square area around the origin
-    # --- heights
-    # Where the heights come from:
-    #   ign           - Spanish IGN terrain model (PNOA-LiDAR), 5 m native, free, no key, Spain only
-    #   copernicus30  - worldwide, free, no key: Copernicus DEM GLO-30, 30 m
-    #   mesh          - a survey mesh (STL) in the map's frame: mesh_file, mesh_world_elevation
-    #   synthetic     - fake terrain for tests (or use_synthetic_terrain: true)
-    # The source is queried every elevation_resolution m (0 = its native spacing: ign 5,
-    # copernicus30 30)
-    # and the result is bicubically interpolated to grid_resolution: finer = smoother terrain and
-    # small NavCels near the robot, NOT more real detail.
-    elevation_source: ign
-    elevation_resolution: 0.0  # m between queries (0 = native)
-    grid_resolution: 1.0       # m between nodes of the DEM / smallest NavCel (radius 500 -> 1001^2)
-    use_synthetic_terrain: false  # true -> offline fake terrain (tests/demos, no network)
-    # --- satellite image draped on the mesh
-    imagery:
-      enabled: true
-      # ign    - Spanish PNOA orthophoto: free, no key, ~0.25 m, Spain only
-      source: ign              # ign (Spain) | xyz (any tile server: set url_template) | auto (= ign)
-      url_template: ""         # xyz only: https://<server>/<path>/{z}/{y}/{x}. No default: the server
-                               # and its terms of use are your choice. Outside Spain and without
-                               # it, set enabled: false (no colours)
-      zoom: 18                 # ~0.45 m per point at 40N; 16 tiles for the default 1 km area
-      scale: 2                 # 1 or 2 (pixel density per tile)
-      max_tiles: 100           # safety cap on the number of requests
-    # --- Gazebo terrain: the launch also sets gazebo.export / world_template / world_file: it
-    #     exports this same DEM as the Gazebo terrain (collision STL + textured OBJ), so the robot
-    #     drives on the NavMap's relief
-    gazebo:
-      terrain_dir: "~/.ros/bigmap/gazebo"
-      terrain_resolution: 4.0  # m: Gazebo collision mesh (coarser than the grid: millions of triangles)
-    # --- files and output
-    cache_file: "~/.ros/bigmap/elevation_cache.bin"  # the DEM (heights and origin, the UKF's): not
-                               # downloaded again on restart while the place and options are the same
-    navmap_file: "~/.ros/bigmap/place.navmap"   # the NavMap of the place, made from the DEM at every
-                               # launch (two NavCels per grid_resolution cell): what the maps manager
-                               # loads (maps_manager_node.bigmap.navmap_path_file, set by the launch)
-    max_slope_deg: 25.0        # deg: steeper ground is left out of that NavMap (not traversable)
-    navmap_keep: "largest"     # what of it is kept: largest, its largest connected part; "x,y" (m,
-                               # the DEM's frame), the part there (in a geo simulation, where the
-                               # robot is spawned); all, every cell, also roofs and closed patios
-                               # that are islands the robot cannot reach
-
-# ---------------------------------------------------------------------------------------------
-# 2. MAPS MANAGER = easynav_bigmap_maps_manager/BigMapMapsManager (a NavMap at levels of detail)
+# 1. MAPS MANAGER = easynav_bigmap_maps_manager/BigMapMapsManager (a NavMap at levels of detail)
 # ---------------------------------------------------------------------------------------------
 maps_manager_node:
   ros__parameters:
@@ -119,18 +60,20 @@ maps_manager_node:
       freq: 10.0                 # [easynav] Hz of update(): sensed obstacles, the map again, filters
 
       # ======================================================================================
-      # 2.1 MAP [bigmap]: the NavMap the levels of detail are made of (once, at start, on every
+      # 1.1 MAP [bigmap]: the NavMap the levels of detail are made of (once, at start, on every
       #   core: cut into tiles of min_radius / 2, each simplified at every level)
       # ======================================================================================
       package: ""                # "": navmap_path_file is a path; a package name: it is
                                  # relative to that package's share directory (like bonxai's)
-      navmap_path_file: "~/.ros/bigmap/place.navmap" # [OUTDOOR] dem_generator.navmap_file: the launch makes it and gives its path
+      navmap_path_file: "~/.ros/bigmap/place.navmap" # [OUTDOOR] the place's, made beforehand with
+                                 # navmap_gis_tool --navmap-out (see the README)
 
       # ======================================================================================
-      # 2.2 LEVELS OF DETAIL [bigmap]: fine around the robot, coarse far away
+      # 1.2 LEVELS OF DETAIL [bigmap]: fine around the robot, coarse far away
       # ======================================================================================
       cell_size:
-        min: 1.0                 # m: NavCels at the borders and obstacles near the robot: the DEM's grid_resolution
+        min: 1.0                 # m: NavCels at the borders and obstacles near the robot: the
+                                 # --resolution the NavMap of the place was made with
         max: 8.0                 # m, >= min: the largest NavCel; far away the map is within max / 2
       min_radius: 15.0           # m: within it the finest level (and the sensed obstacles' detail)
       max_radius: 60.0           # m, > min_radius: from it the coarsest level; geometric in between
@@ -138,7 +81,7 @@ maps_manager_node:
                                  # moved min_radius / 4, its tiles change or the sensed obstacles do)
 
       # ======================================================================================
-      # 2.3 SENSED OBSTACLES [bigmap]: points of the perceptions above the map's surface under
+      # 1.3 SENSED OBSTACLES [bigmap]: points of the perceptions above the map's surface under
       #   them, near the robot. A point over no surface (a hole: a rack, a building), or next to
       #   one, is the map's own obstacle and is left out.
       # ======================================================================================
@@ -156,7 +99,7 @@ maps_manager_node:
         p_miss: 0.4              # (0, 0.5): after a ray through it
 
       # ======================================================================================
-      # 2.4 NAVMAP FILTERS [easynav_navmap_maps_manager]: plugins bigmap borrows, run on the map
+      # 1.4 NAVMAP FILTERS [easynav_navmap_maps_manager]: plugins bigmap borrows, run on the map
       #   every cycle. `filters` is the ONLY on/off switch of each of them: a filter runs if and
       #   only if it is listed here (and has `<name>.plugin`). A* reads `inflated_obstacles`.
       # ======================================================================================
@@ -171,7 +114,7 @@ maps_manager_node:
         cost_scaling_factor: 1.5   # >0: how fast the cost decays with the distance
 
 # ---------------------------------------------------------------------------------------------
-# 3. CONTROLLER [easynav_regulated_pp_controller]: Regulated Pure Pursuit (same in all scenarios).
+# 2. CONTROLLER [easynav_regulated_pp_controller]: Regulated Pure Pursuit (same in all scenarios).
 #    Nothing of bigmap's own is read here.
 # ---------------------------------------------------------------------------------------------
 controller_node:
@@ -223,7 +166,7 @@ controller_node:
       yaw_goal_tolerance: 0.15
 
 # ---------------------------------------------------------------------------------------------
-# 4. LOCALIZER [OUTDOOR] [easynav_fusion_localizer]: GPS + wheel odometry + IMU, UKF (FusionLocalizer)
+# 3. LOCALIZER [OUTDOOR] [easynav_fusion_localizer]: GPS + wheel odometry + IMU, UKF (FusionLocalizer)
 # ---------------------------------------------------------------------------------------------
 localizer_node:
   ros__parameters:
@@ -233,11 +176,12 @@ localizer_node:
       rt_freq: 50.0
       freq: 5.0
       plugin: easynav_fusion_localizer/FusionLocalizer
-      # Same origin as gps_origin above: map (0, 0) is the spawn. The launch overrides these three
-      # with the exact origin of the exported Gazebo world (easynav_overrides.yaml, generated).
-      latitude_origin: 40.284796
-      longitude_origin: -3.821407
-      altitude_origin: 0.0
+      # The origin of the map frame: the --center the NavMap of the place was made with, and the
+      # altitude above sea level of z = 0 there (in a world of easynav_playground_geo, latitude,
+      # longitude and ground_elevation of its world.yaml). Here: Puerta del Sol, Madrid.
+      latitude_origin: 40.4168
+      longitude_origin: -3.7038
+      altitude_origin: 648.015
       # Global filter only: map -> odom from GPS, wheel odometry and IMU heading.
       # odom -> base_footprint is the wheel odometry's own TF (diff drive controller).
       global_filter:
@@ -274,7 +218,7 @@ localizer_node:
         imu0_remove_gravitational_acceleration: true
 
 # ---------------------------------------------------------------------------------------------
-# 5. PLANNER [easynav_navmap_planner]: A* over the NavMap (same in all scenarios).
+# 4. PLANNER [easynav_navmap_planner]: A* over the NavMap (same in all scenarios).
 #    Cost layer: `inflated_obstacles` if bigmap.filters has the inflation, else `obstacles`.
 # ---------------------------------------------------------------------------------------------
 planner_node:
@@ -293,7 +237,7 @@ planner_node:
                                          # and the NavCels at its edge are still coarse
 
 # ---------------------------------------------------------------------------------------------
-# 6. SENSORS [easynav_sensors] [OUTDOOR]: lidar + IMU + GPS (the camera is declared but not used)
+# 5. SENSORS [easynav_sensors] [OUTDOOR]: lidar + IMU + GPS (the camera is declared but not used)
 # ---------------------------------------------------------------------------------------------
 sensors_node:
   ros__parameters:
@@ -316,7 +260,7 @@ sensors_node:
       group: gnss               # the FusionLocalizer reads the GNSS perceptions from this group
 
 # ---------------------------------------------------------------------------------------------
-# 7. SYSTEM [easynav_system]
+# 6. SYSTEM [easynav_system]
 # ---------------------------------------------------------------------------------------------
 system_node:
   ros__parameters:

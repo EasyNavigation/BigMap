@@ -9,34 +9,13 @@ far from them. On 2 x 2 km of Madrid (13.8 M NavCels), routes of up to 1.5 km ar
 faster than on the full map, within 1 % of their length (see
 [`easynav_bigmap_maps_manager`](easynav_bigmap_maps_manager/README.md)).
 
-This repository has the plugin, the application that runs it on a robot (real or simulated), and the
-EasyNav plugins it is used with, at the versions of the article's experiments.
+This repository has the plugin and the application that runs it on a robot (real or simulated).
 
 | path | what it is |
 |---|---|
 | [`easynav_bigmap_maps_manager/`](easynav_bigmap_maps_manager/README.md) | the maps manager plugin (`easynav_bigmap_maps_manager/BigMapMapsManager`) |
-| [`bigmap_bringup/`](bigmap_bringup/README.md) | the application: launch files, the parameter files of the use cases (outdoor, indoor, parking garage, large warehouse, two floors), maps, RViz, and `bigmap_geo.launch.py` (BigMap in the simulated world of any real place) |
-| [`easynav_plugins/`](easynav_plugins) | the EasyNav plugins BigMap is used with, at the versions of the article's experiments (see below) |
+| [`bigmap_bringup/`](bigmap_bringup/README.md) | the application: the parameter files of the use cases (outdoor, indoor, parking garage, large warehouse, two floors), their maps, RViz, and a launch file that starts EasyNav with one of them |
 | [`bigmap.repos`](bigmap.repos) | the other repositories of the workspace |
-
-### `easynav_plugins/`
-
-Copies of packages of [easynav_plugins](https://github.com/EasyNavigation/easynav_plugins), from branch
-`fractal-bigmap` of `jmguerreroh/easynav_plugins` (commit `17e8842e`, tag `bigmap-experiments-v2`: the
-experiments of the article). This repository builds on its own, without the whole of
-`easynav_plugins` (a workspace cannot have the same package twice):
-
-| package | why | changes over `rolling` |
-|---|---|---|
-| `maps_managers/easynav_navmap_maps_manager` | its filters (inflation) run on BigMap's map | Fractal filter (a merged copy of the map for planning), sensed obstacles at the pose of each cloud, `navmap_path_file` without a package |
-| `planners/easynav_navmap_planner` | the A* on the NavMap | `map_key`, dense paths from the robot on large NavCels, planner fixes |
-| `controllers/easynav_regulated_pp_controller` | the controller of the use cases | none |
-| `localizers/easynav_navmap_localizer` | AMCL in the indoor simulations | none |
-| `localizers/easynav_fusion_localizer` | GPS + odometry + IMU outdoors | none |
-| `maps_managers/easynav_bonxai_maps_manager` | the Bonxai map AMCL localizes on | none |
-
-When those changes and BigMap itself (easynav_plugins#183) are merged in `easynav_plugins`, these
-copies go and `bigmap.repos` takes `easynav_plugins` instead.
 
 ## Build (ROS 2 Rolling)
 
@@ -52,8 +31,17 @@ colcon build --symlink-install --packages-up-to bigmap_bringup \
 source install/setup.bash
 ```
 
-`bigmap.repos` brings EasyNavigation and `yaets`, NavMap and `easynav_playgrounds`. Two come from the
-`jmguerreroh` forks until their pull requests are merged in EasyNavigation:
+`bigmap.repos` brings EasyNavigation and `yaets`, `easynav_plugins`, NavMap and
+`easynav_playgrounds`. Three come from the `jmguerreroh` forks until their pull requests are merged
+in EasyNavigation:
+
+- `easynav_plugins`, branch `bigmap`: tag `bigmap-experiments-v2` (the plugins of the article's
+  experiments) without its `easynav_bigmap_maps_manager`, which is this repository's (a workspace
+  cannot have the same package twice). Over `rolling`, the NavMap maps manager has the Fractal
+  filter (a merged copy of the map for planning), sensed obstacles at the pose of each cloud and
+  `navmap_path_file` without a package; the NavMap planner `map_key`, dense paths from the robot on
+  large NavCels and planner fixes. When those changes and BigMap's plugin (easynav_plugins#183) are
+  merged, `bigmap.repos` takes `EasyNavigation/easynav_plugins`.
 
 - NavMap, branch `bigmap`: `simplify` with `keep_vertices`, `cut_along_lines` and `refine`
   (NavMap#47), bounds that change from place to place (#46), `navmap_gis_tool` with buildings,
@@ -67,18 +55,19 @@ source install/setup.bash
 
 ## Run
 
-```bash
-# the world of any place in Gazebo, with the Summit XL, and BigMap on it
-ros2 launch bigmap_bringup bigmap_geo.launch.py lat:=46.0207 lon:=7.7491 radius:=300                # terrain (Zermatt)
-ros2 launch bigmap_bringup bigmap_geo.launch.py lat:=40.4168 lon:=-3.7038 radius:=250 world:=area   # + buildings, walls, trees
+Two commands: the robot (a simulation, or the real one), then EasyNav with BigMap and the parameter
+file of the use case.
 
-# on a robot, real or simulated: one of the use cases of config/
+```bash
+# the world of any place in Gazebo, with the Summit XL
+ros2 launch easynav_playground_geo_worlds geo_sim.launch.py lat:=40.4168 lon:=-3.7038 radius:=250 world:=area
+# EasyNav with BigMap (the NavMap of the place is made once beforehand: see bigmap_bringup)
 ros2 launch bigmap_bringup bigmap.launch.py config:=outdoor
 ```
 
-See [`bigmap_bringup`](bigmap_bringup/README.md) for the use cases and every parameter, and
-[`easynav_bigmap_maps_manager`](easynav_bigmap_maps_manager/README.md) for how the plugin works and what
-it costs.
+See [`bigmap_bringup`](bigmap_bringup/README.md) for the use cases, how to make the NavMap of a
+place, and every parameter, and [`easynav_bigmap_maps_manager`](easynav_bigmap_maps_manager/README.md)
+for how the plugin works and what it costs.
 
 ## License
 

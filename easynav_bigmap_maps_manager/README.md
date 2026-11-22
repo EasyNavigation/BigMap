@@ -33,7 +33,7 @@ maps_manager_node:
     bigmap:
       plugin: easynav_bigmap_maps_manager/BigMapMapsManager
       package: easynav_large_warehouse            # optional: navmap_path_file is relative to it
-      navmap_path_file: maps/large_warehouse_collision.navmap
+      navmap_path_file: maps/large_warehouse_collision.navmap   # without package, a path ("~/": home)
       cell_size:
         min: 0.5          # m: NavCels at the obstacles near the robot
         max: 8.0          # m: the largest NavCel; far away the map is within max / 2

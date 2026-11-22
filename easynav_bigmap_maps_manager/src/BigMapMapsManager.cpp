@@ -72,6 +72,8 @@ void BigMapMapsManager::on_initialize()
   }
   if (!package.empty()) {
     path = (std::filesystem::path(easynav::get_package_share_path(package)) / path).string();
+  } else if (path.rfind("~/", 0) == 0 && std::getenv("HOME")) {
+    path = std::string(std::getenv("HOME")) + path.substr(1);   // as a shell would
   }
   ::navmap::NavMap source;
   std::error_code ec;

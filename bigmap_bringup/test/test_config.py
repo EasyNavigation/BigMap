@@ -201,7 +201,7 @@ def test_the_map_files_exist(path):
         assert os.path.isfile(os.path.join(ROOT, b['navmap_path_file'])), b['navmap_path_file']
     elif 'indoor' not in os.path.basename(path) and 'outdoor' not in os.path.basename(path):
         # (params_indoor.yaml is the real robot's template: its map is the one thing to fill in;
-        # outdoors the launch makes the NavMap of the place)
+        # outdoors it is the NavMap of a place, made beforehand)
         assert b['navmap_path_file'], 'navmap_path_file is the map: set it'
     bonxai = load(path)['maps_manager_node']['ros__parameters'].get('bonxai')
     if bonxai and bonxai.get('package') == 'bigmap_bringup':
@@ -241,7 +241,7 @@ def test_simulation_or_real_robot_as_the_file_is_meant(path):
 @pytest.mark.parametrize('path', [p for p in CONFIGS if os.path.basename(p) in SIM_WITH_AMCL],
                          ids=os.path.basename)
 def test_simulations_say_where_the_robot_starts(path):
-    # the launch spawns the robot at localizer_node.amcl.initial_pose: without it, at (0, 0)
+    # the simulation must spawn the robot at localizer_node.amcl.initial_pose: AMCL starts there
     pose = load(path)['localizer_node']['ros__parameters']['amcl']['initial_pose']
     float(pose['x'])
     float(pose['y'])
@@ -259,35 +259,13 @@ def test_goal_tolerances_agree_between_system_and_controller(path):
             assert c['yaw_goal_tolerance'] == system['angle_tolerance'], name
 
 
-def outdoor():
-    return [p for p in CONFIGS if 'dem_generator' in load(p)]
-
-
-@pytest.mark.parametrize('path', outdoor(), ids=os.path.basename)
-def test_the_maps_manager_loads_the_navmap_the_generator_writes(path):
-    d = load(path)
-    gen = d['dem_generator']['ros__parameters']
+def test_outdoors_the_map_and_the_gps_origin_are_those_of_one_place():
+    """params_outdoor.yaml loads the NavMap of a place made beforehand (a path, "~/" the home
+    directory: the plugin expands it), and the UKF origin is that place's, with the altitude of its
+    ground (z = 0 there), not 0."""
+    d = load(os.path.join(ROOT, 'config', 'params_outdoor.yaml'))
     b = d['maps_manager_node']['ros__parameters']['bigmap']
-    # (the launch passes its full path in the overrides file; the file says which it is)
-    assert b['navmap_path_file'] == gen['navmap_file'] and not b['package']
-    # the smallest NavCel is the DEM's node spacing (finer would only repeat nodes)
-    assert b['cell_size']['min'] == gen['grid_resolution']
-
-
-def dem_module():
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        'bigmap_dem', os.path.join(ROOT, 'bigmap_bringup', 'dem.py'))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-@pytest.mark.parametrize('path', outdoor(), ids=os.path.basename)
-def test_no_generator_key_the_launch_does_not_read(path):
-    """The `dem_generator` block is read by the launch (dem_generator_command): a key it does
-    not know would be silently ignored."""
-    launch = dem_module()
-    gen = load(path)['dem_generator']['ros__parameters']
-    unknown = sorted(k for k in flat(gen) if k not in launch.DEM_KEYS | launch.DEM_IGNORED_KEYS)
-    assert not unknown, 'keys the launch does not read: %s' % unknown
+    assert not b['package'] and b['navmap_path_file'].endswith('.navmap')
+    ukf = d['localizer_node']['ros__parameters']['ukf']
+    assert -90 < ukf['latitude_origin'] < 90 and -180 < ukf['longitude_origin'] < 180
+    assert isinstance(ukf['altitude_origin'], float) and ukf['altitude_origin'] != 0.0
