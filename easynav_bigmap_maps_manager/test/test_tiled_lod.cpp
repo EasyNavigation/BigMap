@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "easynav_bigmap_maps_manager/tiled_lod.hpp"
+#include "navmap_core/Costs.hpp"
 #include "navmap_core/NavMap.hpp"
 
 using easynav::bigmap::LodParams;
@@ -256,5 +257,44 @@ TEST(TiledLod, TheLayersOfTheMapAreKept)
     const bool outside = q.x() < 29.9f || q.x() > 32.1f || q.y() < 4.9f || q.y() > 35.1f;
     if (inside) {EXPECT_EQ(nm.layer_get<uint8_t>("obstacles", c), 254);}
     if (outside) {EXPECT_EQ(nm.layer_get<uint8_t>("obstacles", c), 0);}
+  }
+}
+
+TEST(TiledLod, AnObstacleIsAsFineFarAwayAsNear)
+{
+  // A sensed obstacle in the middle of open ground, seen from next to it and from beyond
+  // max_radius: around it the NavCels are cell_min both times, so the inflation around it (and
+  // the passages it closes) do not change as the robot comes and goes
+  const NavMap map = town(100.0f, 0.5f, [](float, float) {return false;});
+  TiledLod lod;
+  lod.build(map, params(), 4);
+  const Eigen::Vector3f obstacle(80.2f, 80.3f, ground(80.2f, 80.3f) + 0.1f);
+  const double margin = 1.5;
+  auto longest = [](const NavMap & nm, NavCelId c) {
+      const auto & v = nm.navcels[c].v;
+      float out = 0.0f;
+      for (int k = 0; k < 3; ++k) {
+        const Eigen::Vector3f d = nm.positions.at(v[k]) - nm.positions.at(v[(k + 1) % 3]);
+        out = std::max(out, d.head<2>().norm());
+      }
+      return out;
+    };
+  for (const auto & robot : {Eigen::Vector2d(78.0, 78.0), Eigen::Vector2d(1.0, 1.0)}) {
+    NavMap nm = lod.assemble(lod.select(robot.x(), robot.y()));
+    lod.detail(nm, robot.x(), robot.y(), {obstacle}, margin);
+    std::size_t around = 0, coarse = 0, lethal = 0;
+    for (NavCelId c = 0; c < nm.navcels.size(); ++c) {
+      const Eigen::Vector3f q = nm.navcel_centroid(c);
+      const float d = (q - obstacle).head<2>().norm();
+      if (d < margin) {
+        ++around;
+        EXPECT_LE(longest(nm, c), 0.5f + 1e-3f) << "robot at " << robot.transpose();
+      }
+      coarse += longest(nm, c) > 1.0f;
+      lethal += nm.layer_get<uint8_t>("obstacles", c) == navmap::LETHAL_OBSTACLE;
+    }
+    EXPECT_GT(around, 10u) << robot.transpose();
+    EXPECT_EQ(lethal, 1u) << robot.transpose();
+    EXPECT_GT(coarse, 0u) << "away from the robot and the obstacle the map stays coarse";
   }
 }

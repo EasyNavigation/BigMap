@@ -86,13 +86,19 @@ twice a second):
 2. **Assemble** them in one NavMap. Where a tile has a vertex on a side its neighbour does not,
    the neighbour's NavCel there is split to reach it, so the map is conforming (no cracks) and the
    planner crosses from tile to tile.
-3. **Detail** (`navmap::refine`, longest-edge bisection): within `min_radius`, the borders of the
-   map (walls, racks, the edges of the holes) and the sensed obstacles get NavCels of
-   `cell_size.min`, and so does every NavCel within the inflation radius of them (the cost of a
-   NavCel is that of its centroid: a large one next to an obstacle would read as free). Free
-   ground away from them stays as large as it was. Farther obstacles get the cell size of their
-   place.
+3. **Detail** (`navmap::refine`, longest-edge bisection): the borders of the map (walls, racks,
+   the edges of the holes) within `min_radius` and the sensed obstacles wherever they are get
+   NavCels of `cell_size.min`, and so does every NavCel within the inflation radius of them (the
+   cost of a NavCel is that of its centroid: a large one next to an obstacle would read as free).
+   Free ground away from them stays as large as it was. A sensed obstacle is as fine far away as
+   near: coarser, a passage it closes would look open from afar, and the robot would turn back
+   and forth between that route and another.
 4. The sensed obstacles are marked `LETHAL_OBSTACLE` in the layer `obstacles`; the filters run.
+   Beyond `min_radius` the inscribed cost they leave is lowered to the highest passable one: a large
+   NavCel has the cost of its centroid, and one next to a wall would read as inscribed although the
+   street is wide enough, so a passage would open and close with the robot's distance (and the
+   robot would turn back and forth). Far away a street exists if the map has it (the holes keep
+   their topology); how close the robot may get to the walls is decided near them, on the fine map.
 
 | | Warehouse (2.5 M NavCels) | Madrid, 2 x 2 km (13.8 M) |
 |---|---|---|
@@ -104,7 +110,10 @@ twice a second):
 frame, between `obstacle_min_height` (plus `obstacle_min_height_per_meter` per metre) and
 `obstacle_max_height` above the map's surface under them. A point over no surface, or within
 `cell_size.min` of a place with none (a rack, a building, seen from the side), is the map's own
-obstacle and is left out. They are remembered by cells of `cell_size.min / 2` as evidence in
+obstacle and is left out. With a flat TF (a 2D pose) the points are first turned about the robot by
+the tilt of the surface it stands on, so a ramp ahead is ground; with a 3D localization the clouds
+already carry the body's tilt and nothing is turned (a robot rocking on its suspension does not lift
+the ground ahead into obstacles). They are remembered by cells of `cell_size.min / 2` as evidence in
 log-odds, as the NavMap maps manager's obstacle memory: a point on a cell is a hit, a ray from the
 robot through it (to the ground or to an obstacle beyond) a miss, so an obstacle that moves away is
 cleared once the robot sees through where it was. A cell is an obstacle while it is more likely

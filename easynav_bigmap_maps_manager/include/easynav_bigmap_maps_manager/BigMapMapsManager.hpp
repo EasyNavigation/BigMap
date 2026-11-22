@@ -73,6 +73,10 @@ private:
   void rebuild(const std::vector<std::uint32_t> & tiles, const Eigen::Vector3d & robot);
   /// The map (as the filters left it) and the markers of its levels
   void publish(const ::navmap::NavMap & nm);
+  /// In the cost layer `layer` of the map in NavState, the inscribed cost of far_cells_ lowered to
+  /// the highest passable one: beyond min_radius the NavCels are large and their cost (that of
+  /// their centroid) approximate, so it may make a passage there look closed when it is not
+  void soften_far(::easynav::NavState & nav_state, const std::string & layer) const;
 
   TiledLod lod_;
   SensedObstacles sensed_;
@@ -81,6 +85,7 @@ private:
   bool map_changed_{false};
   std::vector<std::uint32_t> tiles_;     ///< those in map_
   Eigen::Vector2d built_at_{0.0, 0.0};   ///< robot position when map_ was made
+  std::vector<::navmap::NavCelId> far_cells_;   ///< those of map_ beyond min_radius of built_at_
   double built_z_{0.0};
   double last_build_{-1e18};             ///< s
   double last_publish_{-1e18};           ///< s

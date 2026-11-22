@@ -161,6 +161,15 @@ def test_lengths_agree_with_each_other(path):
     assert 0.5 < m['p_hit'] < 1.0 and 0.0 < m['p_miss'] < 0.5 and m['decay_time'] >= 0
 
 
+@pytest.mark.parametrize('path', CONFIGS, ids=os.path.basename)
+def test_the_followed_path_is_checked_only_where_the_map_is_fine(path):
+    """Beyond min_radius the map is coarse and its costs approximate: a path checked there would
+    read closed where it is not, be dropped, and taken again from afar (the robot would turn back
+    and forth)."""
+    astar = load(path)['planner_node']['ros__parameters']['astar']
+    assert 0 < astar['replan_hysteresis_horizon'] <= bigmap(path)['min_radius']
+
+
 def instance_kinds(b):
     """name -> 'obstacle' | 'inflation' for every entry of `filters`, from its plugin."""
     kinds = {}

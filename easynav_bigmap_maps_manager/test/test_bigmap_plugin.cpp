@@ -162,14 +162,18 @@ protected:
     return p;
   }
 
-  void robot_at(double x, double y, double z = 0.0)
+  // pitch (rad, about y; positive: nose down): the robot's body tilted on the ground, as a 3D
+  // localization gives it (a skid-steer robot rocks on its suspension when it turns)
+  void robot_at(double x, double y, double z = 0.0, double pitch = 0.0)
   {
+    pitch_ = pitch;
     nav_msgs::msg::Odometry o;
     o.header.frame_id = "map";
     o.pose.pose.position.x = x;
     o.pose.pose.position.y = y;
     o.pose.pose.position.z = z;
-    o.pose.pose.orientation.w = 1.0;   // facing +x
+    o.pose.pose.orientation.w = std::cos(pitch / 2.0);   // facing +x
+    o.pose.pose.orientation.y = std::sin(pitch / 2.0);
     nav_state_.set("robot_pose", o);
     // and in TF (the perceptions are taken to the map frame with it)
     const auto & tf_info = easynav::RTTFBuffer::getInstance()->get_tf_info();
@@ -179,7 +183,8 @@ protected:
     t.transform.translation.x = x;
     t.transform.translation.y = y;
     t.transform.translation.z = z;
-    t.transform.rotation.w = 1.0;
+    t.transform.rotation.w = std::cos(pitch / 2.0);
+    t.transform.rotation.y = std::sin(pitch / 2.0);
     easynav::RTTFBuffer::getInstance()->setTransform(t, "test", true);
   }
 
@@ -194,6 +199,17 @@ protected:
     if (ground_ahead_) {
       for (float x = 1.0f; x <= 6.0f; x += 0.1f) {
         for (float y = -1.0f; y <= 1.0f; y += 0.1f) {p.data.push_back(pcl::PointXYZ(x, y, 0.0f));}
+      }
+    }
+    if (level_ground_ahead_) {
+      // the flat ground of the map (z = 0 in the map frame) from 1 to 8 m ahead, as the tilted
+      // robot sees it: in its frame, turned by -pitch_
+      const float c = static_cast<float>(std::cos(pitch_));
+      const float sn = static_cast<float>(std::sin(pitch_));
+      for (float x = 1.0f; x <= 8.0f; x += 0.1f) {
+        for (float y = -1.0f; y <= 1.0f; y += 0.1f) {
+          p.data.push_back(pcl::PointXYZ(c * x, y, sn * x));
+        }
       }
     }
     if (box) {
@@ -232,6 +248,8 @@ protected:
 
   std::string map_file_;
   bool ground_ahead_ = false;
+  bool level_ground_ahead_ = false;
+  double pitch_ = 0.0;
   std::vector<rclcpp::Parameter> overrides_;
   rclcpp_lifecycle::LifecycleNode::SharedPtr node_;
   easynav::NavState nav_state_;
@@ -396,4 +414,49 @@ TEST_F(BigMapPluginTest, ThePublishedMapHasTheFiltersLayersAndTheLevelsAreDrawn)
     circles += m.ns == "level radii" && m.type == visualization_msgs::msg::Marker::LINE_STRIP;
   }
   EXPECT_EQ(circles, 3u);   // where levels 1, 2 and 3 start
+}
+
+TEST_F(BigMapPluginTest, ARobotThatRocksDoesNotTakeTheGroundForAnObstacle)
+{
+  // With a 3D localization the TF has the body's tilt, and the clouds come to the map frame with
+  // it: the flat ground ahead is flat, nothing is to be turned. A body tilted 6 deg on flat ground
+  // (rocking on its suspension) would otherwise lift the ground 0.6 m at 6 m
+  auto p = make();
+  level_ground_ahead_ = true;
+  for (const double pitch : {0.1, -0.1}) {
+    robot_at(10.0, 20.0, 0.0, pitch);   // in a street, facing +x
+    run(*p, false, 0.6);
+    EXPECT_EQ(p->sensed().size(), 0u) << "pitch " << pitch;
+  }
+  // and an obstacle is still seen from the tilted robot
+  level_ground_ahead_ = false;
+  robot_at(10.0, 20.0, 0.0, 0.0);
+  run(*p, true, 0.8);
+  EXPECT_GT(p->sensed().size(), 0u);
+}
+
+TEST_F(BigMapPluginTest, FarAwayTheInscribedCostIsACostNotABarrier)
+{
+  // Beyond min_radius the NavCels are large and their cost is that of their centroid: one next to
+  // a wall reads as inscribed although the street is wide. There it is the highest passable cost;
+  // near the robot (fine) the inscribed cost still blocks
+  set("inflation.inscribed_radius", 0.6);
+  auto p = make();
+  robot_at(10.0, 20.0);
+  run(*p, false, 0.6);
+  std::size_t near_inscribed = 0, far_inscribed = 0, far_softened = 0;
+  for (NavCelId c = 0; c < map().navcels.size(); ++c) {
+    const Eigen::Vector3f q = map().navcel_centroid(c);
+    const double d = std::hypot(q.x() - 10.0, q.y() - 20.0);
+    const auto v = map().layer_get<std::uint8_t>("inflated_obstacles", c);
+    if (d <= 10.0) {
+      near_inscribed += v == navmap::INSCRIBED_INFLATED_OBSTACLE;
+    } else {
+      far_inscribed += v == navmap::INSCRIBED_INFLATED_OBSTACLE;
+      far_softened += v == navmap::INSCRIBED_INFLATED_OBSTACLE - 1;
+    }
+  }
+  EXPECT_GT(near_inscribed, 0u);
+  EXPECT_EQ(far_inscribed, 0u);
+  EXPECT_GT(far_softened, 0u);
 }

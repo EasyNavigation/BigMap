@@ -28,6 +28,7 @@
 #include <thread>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -422,8 +423,10 @@ void TiledLod::detail(
       return std::hypot(q.x() - x, q.y() - y) <= p_.min_radius + extra;
     };
 
-  // Seeds near the robot: the borders of the map (points every cell_min along them) and the
-  // sensed obstacles. Farther obstacles keep the cell size of their place.
+  // Seeds: the borders of the map near the robot (points every cell_min along them), and the
+  // sensed obstacles wherever they are (they are few, and the memory forgets the far ones). An
+  // obstacle is as fine far away as near: coarser, the inflation around it would read differently
+  // as the robot comes and goes, and a passage it closes would open and close with the distance.
   std::unordered_map<std::uint64_t, int> edges;
   auto key = [](PointId a, PointId b) {
       return a < b ? (static_cast<std::uint64_t>(a) << 32) | b :
@@ -454,77 +457,53 @@ void TiledLod::detail(
       if (near_robot(q, 0.0)) {seeds.push_back(q);}
     }
   }
-  struct Far
-  {
-    Eigen::Vector2f p;
-    float size;
-  };
-  std::vector<Far> far;
   for (const auto & q : obstacles) {
-    if (near_robot(q.head<2>(), 0.0)) {
-      seeds.push_back(q.head<2>());
-    } else {
-      far.push_back(
-        {q.head<2>(), static_cast<float>(cell(level_at(std::hypot(q.x() - x, q.y() - y))))});
-    }
+    seeds.push_back(q.head<2>());
   }
 
   // Every NavCel within the margin (the inflation) of a seed fine: the cost of a NavCel is that
-  // of its centroid, so a large one next to an obstacle would read as free. A NavCel holding an
-  // obstacle farther away, as fine as the cell size of its place. One refinement for all.
+  // of its centroid, so a large one next to an obstacle would read as free. One refinement for all.
   const double band = std::max(margin, p_.cell_min);
   auto grid_key = [](std::int64_t i, std::int64_t j) {return (i << 32) ^ (j & 0xffffffff);};
   auto cell_of = [](float v, double cell) {return static_cast<std::int64_t>(std::floor(v / cell));};
   std::unordered_map<std::int64_t, std::vector<Eigen::Vector2f>> seed_grid;
+  // and a coarse one, to leave out at once the NavCels far from every seed: of a NavCel that
+  // reaches no farther than cell_max from its centroid, a seed within band + reach is in one of
+  // the nine cells of this size around it
+  const double coarse = band + p_.cell_max;
+  std::unordered_set<std::int64_t> coarse_grid;
   for (const auto & q : seeds) {
     seed_grid[grid_key(cell_of(q.x(), band), cell_of(q.y(), band))].push_back(q);
+    coarse_grid.insert(grid_key(cell_of(q.x(), coarse), cell_of(q.y(), coarse)));
   }
-  const double far_cell = p_.cell_max;
-  std::unordered_map<std::int64_t, std::vector<Far>> far_grid;
-  for (const auto & f : far) {
-    far_grid[grid_key(cell_of(f.p.x(), far_cell), cell_of(f.p.y(), far_cell))].push_back(f);
-  }
-  auto cross = [](const Eigen::Vector2f & u, const Eigen::Vector2f & v) {
-      return u.x() * v.y() - u.y() * v.x();
+  auto near_a_seed = [&](const Eigen::Vector2f & q) {
+      const auto ci = cell_of(q.x(), coarse), cj = cell_of(q.y(), coarse);
+      for (std::int64_t i = ci - 1; i <= ci + 1; ++i) {
+        for (std::int64_t j = cj - 1; j <= cj + 1; ++j) {
+          if (coarse_grid.count(grid_key(i, j))) {return true;}
+        }
+      }
+      return false;
     };
   auto size_at = [&](
     const Eigen::Vector3f & a3, const Eigen::Vector3f & b3, const Eigen::Vector3f & c3) {
       const Eigen::Vector2f a = a3.head<2>(), b = b3.head<2>(), c = c3.head<2>();
       const Eigen::Vector2f q = (a + b + c) / 3.0f;
       const float reach = std::max({(a - q).norm(), (b - q).norm(), (c - q).norm()});
-      if (!seed_grid.empty() && near_robot(q, band + reach)) {
-        const double r = band + reach;
-        const int span = static_cast<int>(std::ceil(r / band));
-        const auto ci = cell_of(q.x(), band), cj = cell_of(q.y(), band);
-        for (std::int64_t i = ci - span; i <= ci + span; ++i) {
-          for (std::int64_t j = cj - span; j <= cj + span; ++j) {
-            const auto it = seed_grid.find(grid_key(i, j));
-            if (it == seed_grid.end()) {continue;}
-            for (const auto & sd : it->second) {
-              if ((sd - q).norm() < r) {return fine;}
-            }
+      if (reach <= cell_max && !near_a_seed(q)) {return std::numeric_limits<float>::infinity();}
+      const double r = band + reach;
+      const int span = static_cast<int>(std::ceil(r / band));
+      const auto ci = cell_of(q.x(), band), cj = cell_of(q.y(), band);
+      for (std::int64_t i = ci - span; i <= ci + span; ++i) {
+        for (std::int64_t j = cj - span; j <= cj + span; ++j) {
+          const auto it = seed_grid.find(grid_key(i, j));
+          if (it == seed_grid.end()) {continue;}
+          for (const auto & sd : it->second) {
+            if ((sd - q).norm() < r) {return fine;}
           }
         }
       }
-      float out = std::numeric_limits<float>::infinity();
-      if (far_grid.empty()) {return out;}
-      const Eigen::Vector2f lo = a.cwiseMin(b).cwiseMin(c), hi = a.cwiseMax(b).cwiseMax(c);
-      const float area = cross(b - a, c - a);
-      const float eps = 1e-6f * std::abs(area) + 1e-9f;
-      for (auto i = cell_of(lo.x(), far_cell); i <= cell_of(hi.x(), far_cell); ++i) {
-        for (auto j = cell_of(lo.y(), far_cell); j <= cell_of(hi.y(), far_cell); ++j) {
-          const auto it = far_grid.find(grid_key(i, j));
-          if (it == far_grid.end()) {continue;}
-          for (const auto & f : it->second) {
-            const float s1 = cross(b - a, f.p - a), s2 = cross(c - b, f.p - b),
-              s3 = cross(a - c, f.p - c);
-            const bool in = area > 0.0f ? (s1 >= -eps && s2 >= -eps && s3 >= -eps) :
-              (s1 <= eps && s2 <= eps && s3 <= eps);
-            if (in) {out = std::min(out, f.size);}
-          }
-        }
-      }
-      return out;
+      return std::numeric_limits<float>::infinity();
     };
   const auto st = ::navmap::refine(nm, size_at);
   if (st.navcels_after == st.navcels_before) {nm.rebuild_geometry_accels();}  // refine did not

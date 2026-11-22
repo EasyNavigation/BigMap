@@ -147,7 +147,7 @@ maps_manager_node:
       obstacle_min_height_per_meter: 0.05   # obstacle_min_height grows this much per metre from
                                  # the robot (a slight tilt of the robot or the sensor puts the far
                                  # ground above it)
-      obstacle_max_height: 1.2   # m: higher points do not touch the robot (its height)
+      obstacle_max_height: 1.0   # m: higher points do not touch the robot (robot_geometry.height)
       forget_distance: 60.0      # m: sensed obstacles farther than this are forgotten (0 = max_radius)
       memory:                    # evidence per cell of cell_size.min / 2, in log-odds (as OctoMap)
         clearing: true           # rays from the robot through a sensed obstacle clear it (it moved away)
@@ -288,7 +288,9 @@ planner_node:
       # while its first replan_hysteresis_horizon m are traversable, unless a new one is 20 %
       # shorter (0: always the new one; horizon 0: the whole path is checked)
       replan_hysteresis: 0.2
-      replan_hysteresis_horizon: 20.0    # m, ~ bigmap min_radius: beyond it the map is coarse and changes
+      replan_hysteresis_horizon: 10.0    # m, < bigmap min_radius: beyond it the map is coarse
+                                         # and its costs approximate (a passage may read closed),
+                                         # and the NavCels at its edge are still coarse
 
 # ---------------------------------------------------------------------------------------------
 # 6. SENSORS [easynav_sensors] [OUTDOOR]: lidar + IMU + GPS (the camera is declared but not used)

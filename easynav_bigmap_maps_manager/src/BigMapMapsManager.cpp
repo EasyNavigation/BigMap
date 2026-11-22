@@ -34,6 +34,7 @@
 #include "easynav_common/Parameters.hpp"
 #include "easynav_common/RTTFBuffer.hpp"
 #include "easynav_sensors/types/PointPerception.hpp"
+#include "navmap_core/Costs.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "navmap_ros/conversions.hpp"
 #include "navmap_ros/navmap_io.hpp"
@@ -200,8 +201,11 @@ bool BigMapMapsManager::sense(
   // The ground under the robot, on the map, and its tilt: the robot stands on it, so on a ramp the
   // sensor is tilted like the ramp. With a flat TF (2D odometry) the ramp ahead comes at the
   // robot's own height (going down a ramp, it would otherwise be taken for an obstacle above the
-  // ramp's lower part): each point is turned about the robot by what TF lacks of that tilt
-  // (nothing, if the robot's pose in TF has it already, e.g. a 3D localization)
+  // ramp's lower part): each point is turned about the robot by the tilt of the surface. With a
+  // TF that has a tilt (a 3D localization), the clouds already come to the map frame with the
+  // body's real tilt, and nothing is turned: the body is not always as tilted as the surface (a
+  // robot rocks on its suspension when it turns, and the map's surface is simplified), and
+  // turning by the difference would lift the ground ahead into obstacles (6 deg: 0.6 m at 6 m)
   std::size_t s;
   ::navmap::NavCelId cid;
   Eigen::Vector3f bary, hit;
@@ -228,7 +232,10 @@ bool BigMapMapsManager::sense(
           static_cast<float>(r.z)) * Eigen::Vector3f::UnitZ();
       } catch (const std::exception &) {
       }
-      tilt = Eigen::Quaternionf::FromTwoVectors(up, n);
+      // a flat TF has its up exactly vertical (a 2D pose has only a yaw)
+      if (up.normalized().z() > std::cos(1e-3f)) {
+        tilt = Eigen::Quaternionf::FromTwoVectors(Eigen::Vector3f::UnitZ(), n);
+      }
     }
   }
   (void)yaw;   // the heading comes with each perception's TF
@@ -291,11 +298,37 @@ void BigMapMapsManager::rebuild(
   stats_[3] = std::chrono::duration<double, std::milli>(t2 - t1).count();
   stats_[4] = static_cast<double>(map_.navcels.size());
   tiles_ = tiles;
+  far_cells_.clear();
+  const double fine = lod_.params().min_radius;
+  for (::navmap::NavCelId c = 0; c < map_.navcels.size(); ++c) {
+    const Eigen::Vector3f q = map_.navcel_centroid(c);
+    if (std::hypot(q.x() - robot.x(), q.y() - robot.y()) > fine) {far_cells_.push_back(c);}
+  }
   built_at_ = robot.head<2>();
   built_z_ = robot.z();
   has_map_ = true;
   map_changed_ = true;
   publish_pending_ = true;
+}
+
+void BigMapMapsManager::soften_far(::easynav::NavState & nav_state, const std::string & layer)
+const
+{
+  // Far away the map keeps the topology (the holes of the source, so whether a street exists) but
+  // not the clearance: a large NavCel whose centroid falls next to a wall reads as inscribed
+  // although the street is wide enough. As a barrier there, a passage would open and close with
+  // the robot's distance and the robot would turn back and forth; as a high cost it does not.
+  // Near the robot (fine) the inscribed cost blocks, and lethal blocks everywhere.
+  if (far_cells_.empty() || !nav_state.has("map.navmap")) {return;}
+  auto & nm = *nav_state.get_ptr<::navmap::NavMap>("map.navmap");
+  auto l = std::dynamic_pointer_cast<::navmap::LayerView<std::uint8_t>>(nm.layers.get(layer));
+  if (!l || l->size() != nm.navcels.size()) {return;}
+  for (const auto c : far_cells_) {
+    if (c < l->size() && (*l)[c] == ::navmap::INSCRIBED_INFLATED_OBSTACLE) {
+      l->data()[c] = ::navmap::INSCRIBED_INFLATED_OBSTACLE - 1;
+      l->mark_changed(c);
+    }
+  }
 }
 
 void BigMapMapsManager::publish(const ::navmap::NavMap & nm)
@@ -437,6 +470,7 @@ void BigMapMapsManager::update(::easynav::NavState & nav_state)
   for (const auto & filter : filters_) {
     filter->set_map_resolution(static_cast<float>(lod_.cell(0)));
     filter->update(nav_state);
+    if (filter->is_adding_layer()) {soften_far(nav_state, filter->get_layer_name());}
     // A map not published yet carries its layers itself: an update now would be of a geometry
     // the subscribers do not have yet
     if (subscribers == 0 || publish_pending_ || !filter->is_adding_layer()) {continue;}

@@ -87,12 +87,13 @@ public:
   /**
    * @brief The detail of the obstacles around (x, y), on a map assemble() made there.
    *
-   * Within min_radius, the borders of the map (walls, drops, the edges of the holes) and the
-   * @p obstacles (points on the surface, e.g. sensed) are refined (navmap::refine) to cell_min,
-   * and so is every NavCel within @p margin (m; at least cell_min) of them: what an inflation of
-   * that radius reads. Farther, the obstacles get the cell size of their place. The NavCels of
-   * the obstacles are marked LETHAL_OBSTACLE in the layer "obstacles" (created if absent). The
-   * geometry accelerations of @p nm are built at the end.
+   * The borders of the map (walls, drops, the edges of the holes) within min_radius and the
+   * @p obstacles (points on the surface, e.g. sensed) wherever they are are refined
+   * (navmap::refine) to cell_min, and so is every NavCel within @p margin (m; at least cell_min)
+   * of them: what an inflation of that radius reads. An obstacle is as fine far away as near, so
+   * a passage it closes is closed at any distance. The NavCels of the obstacles are marked
+   * LETHAL_OBSTACLE in the layer "obstacles" (created if absent). The geometry accelerations of
+   * @p nm are built at the end.
    */
   void detail(
     ::navmap::NavMap & nm, double x, double y, const std::vector<Eigen::Vector3f> & obstacles,
