@@ -231,14 +231,16 @@ def test_an_area_is_made_from_its_mesh_with_the_ground_of_its_centre():
     assert outside['imagery.source'] == 'esri'
 
 
-def test_an_area_with_holes_is_made_from_its_ground_with_its_buildings_as_holes(tmp_path):
+def test_an_area_with_holes_is_made_from_its_ground_with_its_buildings_as_holes(tmp_path, capsys):
     m = module()
     area = {'dir': str(tmp_path), 'ground_elevation': '651.5', 'latitude': '40.4168',
             'longitude': '-3.7038', 'radius': '400.0'}
     assert 'holes_mesh_file' not in m.area_overrides(area)
     assert '--dem-holes-mesh' not in command(m.area_overrides(area))
-    with pytest.raises(RuntimeError, match='navmap_ground.stl'):
-        m.area_overrides(area, holes=True)   # an area made before the ground and holes meshes
+    # an area made before the ground and holes meshes: its buildings stay blocks, and it says so
+    old = m.area_overrides(area, holes=True)
+    assert old['mesh_file'] == str(tmp_path / 'navmap.stl') and 'holes_mesh_file' not in old
+    assert 'older generator' in capsys.readouterr().out
     (tmp_path / 'navmap_ground.stl').write_bytes(b'')
     (tmp_path / 'navmap_holes.stl').write_bytes(b'')
     over = m.area_overrides(area, holes=True)
@@ -246,6 +248,18 @@ def test_an_area_with_holes_is_made_from_its_ground_with_its_buildings_as_holes(
     cmd = command(over)
     assert option(cmd, '--mesh-file') == str(tmp_path / 'navmap_ground.stl')
     assert option(cmd, '--dem-holes-mesh') == str(tmp_path / 'navmap_holes.stl')
+
+
+def test_the_navmap_keeps_what_the_robot_can_reach():
+    m = module()
+    p = {'gps_origin.latitude': 40.0, 'gps_origin.longitude': -3.0, 'download_radius': 100.0,
+         'cache_file': '/tmp/d.bin', 'navmap_file': '/tmp/m.navmap'}
+    assert option(command(p), '--navmap-keep') == 'largest'          # the default
+    assert option(command(dict(p, navmap_keep='3,-4.5')), '--navmap-keep') == '3.0,-4.5'
+    assert '--navmap-keep' not in command(dict(p, navmap_keep='all'))
+    for wrong in ('biggest', '1', '1,2,3', 'a,b'):
+        with pytest.raises(RuntimeError, match='navmap_keep'):
+            command(dict(p, navmap_keep=wrong))
 
 
 def test_an_area_directory_is_named_as_area_world_names_it():
@@ -342,6 +356,18 @@ def test_a_geo_world_is_followed_by_its_mesh_and_its_place(tmp_path):
     assert info['dem']['imagery.source'] == 'esri'
     cmd = command(info['dem'])
     assert option(cmd, '--center') == '46.0207,7.7491' and option(cmd, '--dem-source') == 'mesh'
+    # no world.yaml with the spawn: the largest part of the map
+    assert 'navmap_keep' not in info['dem'] and option(cmd, '--navmap-keep') == 'largest'
+
+
+def test_the_map_of_a_geo_world_keeps_the_part_where_the_robot_is_spawned(tmp_path):
+    m = module()
+    last, d = write_geo_world(tmp_path)
+    with open(os.path.join(d, 'world.yaml'), 'w') as f:
+        f.write('# written by geo_world.py\nradius: 300.0\nspawn_x: 12.50\nspawn_y: -3.00\n'
+                'spawn_z: 0.500\n')
+    info = m.geo_sim_info(m.read_geo_world(last), path=last)
+    assert option(command(info['dem']), '--navmap-keep') == '12.5,-3.0'
 
 
 def test_a_last_world_that_is_not_the_playgrounds_is_refused_with_a_message(tmp_path):

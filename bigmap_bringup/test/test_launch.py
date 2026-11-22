@@ -429,14 +429,21 @@ def test_following_a_geo_world_makes_the_map_of_its_mesh(monkeypatch, tmp_path):
     cmd = command_of(processes(actions)[0])
     assert option(cmd, '--center') == '40.4168,-3.7038' and float(option(cmd, '--size')) == 500.0
     assert option(cmd, '--dem-source') == 'mesh'
-    assert option(cmd, '--mesh-file') == os.path.join(d, 'navmap.stl')
     assert float(option(cmd, '--mesh-world-elevation')) == 648.015
-    assert '--dem-holes-mesh' not in cmd and '--world-template' not in cmd
-    # its buildings, walls and trunks as holes of the ground
-    m, ctx, actions = setup(config='outdoor', sim='true', area_holes='true')
-    cmd = command_of(processes(actions)[0])
     assert option(cmd, '--mesh-file') == os.path.join(d, 'navmap_ground.stl')
     assert option(cmd, '--dem-holes-mesh') == os.path.join(d, 'navmap_holes.stl')
+    assert '--world-template' not in cmd
+    # by default its buildings, walls and trunks are holes of the ground; false: blocks of it
+    m, ctx, actions = setup(config='outdoor', sim='true', area_holes='false')
+    cmd = command_of(processes(actions)[0])
+    assert option(cmd, '--mesh-file') == os.path.join(d, 'navmap.stl')
+    assert '--dem-holes-mesh' not in cmd
+    # only the part the robot can reach: the largest one, or the one given
+    assert option(cmd, '--navmap-keep') == 'largest'
+    m, ctx, actions = setup(config='outdoor', sim='true', navmap_keep='5,-2')
+    assert option(command_of(processes(actions)[0]), '--navmap-keep') == '5.0,-2.0'
+    m, ctx, actions = setup(config='outdoor', sim='true', navmap_keep='all')
+    assert '--navmap-keep' not in command_of(processes(actions)[0])
 
 
 def test_the_last_simulation_launched_is_the_one_followed(monkeypatch, tmp_path):

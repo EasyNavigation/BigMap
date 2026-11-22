@@ -100,7 +100,8 @@ ros2 launch bigmap_bringup bigmap.launch.py config:=outdoor sim:=true
 | `config` | `outdoor` | the use case: `config/params_<config>.yaml` |
 | `params_file` | `''` | a complete parameter file instead |
 | `sim` | `false` | `true`: follow the last simulation launched: the mesh of the world of `easynav_playground_geo` (`~/.ros/easynav_geo/last_world.yaml`) or what `easynav_playground_bigmap` wrote (`~/.ros/bigmap/sim/sim.yaml`); `use_sim_time: true`, and EasyNav waits for the robot's transform (`tools/wait_for_robot.py`) |
-| `area_holes` | `false` | `sim:=true` with a world of `easynav_playground_geo`: `true`, its buildings, walls and tree trunks are holes of the NavMap over the ground (their exact footprints); `false`, blocks of the DEM, left out of the NavMap as too steep (`dem_generator.max_slope_deg`) |
+| `area_holes` | `true` | `sim:=true` with a world of `easynav_playground_geo`: `true`, its buildings, walls and tree trunks are holes of the NavMap over the ground (their exact footprints); `false`, blocks of the DEM, whose walls are left out of the NavMap as too steep (`dem_generator.max_slope_deg`) and whose roofs are islands (left out by `navmap_keep`). A world made by an older playground, without `navmap_ground.stl` and `navmap_holes.stl`, has its buildings as blocks, and the launch says so |
+| `navmap_keep` | `''` (the file's) | outdoors, what of the NavMap made from the DEM is kept: `largest`, its largest connected part; `x,y` (m, the frame of the DEM), the part there; `all`, every cell. Empty: `dem_generator.navmap_keep` (`largest` in `params_outdoor.yaml`) or, following a world of `easynav_playground_geo`, the part where it spawns the robot |
 | `lat`, `lon`, `radius` | `''` (the file's place) | the place of the map (the DEM): centre (= the origin of the map and of the UKF) and half-side, m. Outside Spain the heights are Copernicus 30 m and the imagery Esri |
 | `use_synthetic_terrain` | `''` (the file's) | `true`: offline, fake imagery and terrain |
 | `navmap` | `''` | outdoors: load this NavMap instead of making one from the DEM of a place (see below) |
@@ -112,7 +113,8 @@ What the launch does with a file that has a `dem_generator` block (outdoors): `n
 downloads the DEM (elevation and satellite imagery) once and caches it where the file says
 (`dem_generator.cache_file`), writes from it the NavMap of the place (`dem_generator.navmap_file`: two
 NavCels per `grid_resolution` cell, the vertex colours of the imagery, without the ground steeper than
-`max_slope_deg` and without the holes) and exits; then EasyNav (`system_main`) starts with the file and an
+`max_slope_deg` and without the holes, and only the part connected to the robot (`navmap_keep`): without
+roofs and closed patios, islands it cannot reach) and exits; then EasyNav (`system_main`) starts with the file and an
 overrides file (`~/.ros/bigmap/easynav_overrides.yaml`: the full path of that NavMap for the maps manager
 and, when the file has a GPS localizer, the UKF origin, the lat, lon and altitude of the DEM's origin) and
 RViz2 opens. A file without that block (indoors) has its NavMap in `bigmap.package` +
@@ -132,7 +134,7 @@ given on top of it win. The application never writes a world.
 ```bash
 ros2 launch bigmap_bringup bigmap_geo.launch.py lat:=46.0207 lon:=7.7491 radius:=300                # terrain
 ros2 launch bigmap_bringup bigmap_geo.launch.py lat:=40.4168 lon:=-3.7038 radius:=250 world:=area   # + buildings, walls, trees
-ros2 launch bigmap_bringup bigmap_geo.launch.py world:=area area_holes:=true gui:=false
+ros2 launch bigmap_bringup bigmap_geo.launch.py world:=area gui:=false
 ```
 
 It is the two launches above in one: first `easynav_playground_geo` makes the world of the place
@@ -145,8 +147,11 @@ and RViz. Send goals from RViz.
 | `world`, `lat`, `lon`, `radius`, `trees`, `walls`, `roof`, `lidar`, `spawn_x`, `spawn_y`, `spawn_z`, `gui`, `gpu` | those of `easynav_playground_geo` (the URJC campus at Fuenlabrada, 300 m, `terrain`) | the world: see the README of `easynav_playground_geo` |
 | `config` | `outdoor` | the use case; it must make its map from a DEM (a `dem_generator` block): the others are refused with a message |
 | `params_file` | `''` | a complete parameter file instead (with a `dem_generator` block) |
-| `area_holes` | `false` | `world:=area`: the buildings, walls and trunks as holes of the map (see above) |
+| `area_holes` | `true` | `world:=area`: the buildings, walls and trunks as holes of the map (see above) |
 | `rviz`, `rviz_config` | `true`, `''` | RViz2 and its configuration |
+
+The NavMap is the part of the place where the robot is: where the playground spawns it, or `spawn_x`,
+`spawn_y` when given (passed to `bigmap.launch.py` as `navmap_keep`).
 
 The place of the map is the world's: `lat`, `lon`, `radius` go to the simulation only, and the
 application takes the world's mesh, origin and elevation from `last_world.yaml`. Outside Spain the

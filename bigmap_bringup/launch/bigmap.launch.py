@@ -101,10 +101,15 @@ def generate_launch_description():
                         'of its world; easynav_playground_bigmap: ~/.ros/bigmap/sim/sim.yaml); '
                         'use_sim_time true; EasyNav waits for the robot. false: a real robot'),
         DeclareLaunchArgument(
-            'area_holes', default_value='false',
+            'area_holes', default_value='true',
             description='sim:=true with a world of easynav_playground_geo: true, its buildings, walls '
                         'and trunks are holes of the NavMap over the ground (exact footprints); '
                         'false, blocks of the DEM, left out of the NavMap as too steep'),
+        DeclareLaunchArgument(
+            'navmap_keep', default_value='',
+            description='Outdoors, what of the NavMap made from the DEM is kept: largest, its '
+                        'largest connected part; x,y (m), the part there; all, every cell. Empty: '
+                        'dem_generator.navmap_keep (in a geo simulation, where the robot is spawned)'),
         DeclareLaunchArgument('lat', default_value='',
                               description='Latitude of the centre of the map (= its origin). Not given: '
                                           'the parameter file\'s place (or the simulation\'s)'),
@@ -231,6 +236,8 @@ def setup(context):
         overrides['download_radius'] = float(arg('radius'))
     if arg('use_synthetic_terrain'):
         overrides['use_synthetic_terrain'] = arg('use_synthetic_terrain') == 'true'
+    if arg('navmap_keep'):
+        overrides['navmap_keep'] = arg('navmap_keep')
     overrides['gazebo.export'] = False      # the world is the simulation's business
     dem_params = bigmap_dem.dem_parameters(params_file, overrides)
     if dem_params.get('base_navmap.enabled'):

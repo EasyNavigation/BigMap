@@ -55,7 +55,7 @@ APP_ARGS = {
     'config': ('outdoor', 'The use case, config/params_<config>.yaml: one that makes its map from '
                           'a DEM (a dem_generator block): outdoor'),
     'params_file': ('', 'A complete parameter file instead (with a dem_generator block)'),
-    'area_holes': ('false', 'world:=area: true, the buildings, walls and trunks are holes of the map '
+    'area_holes': ('true', 'world:=area: true, the buildings, walls and trunks are holes of the map '
                             'over the ground (exact footprints); false, blocks of it'),
     'rviz': ('true', 'Start RViz2'),
     'rviz_config': ('', 'RViz2 configuration file. Default: rviz/bigmap.rviz'),
@@ -96,6 +96,10 @@ def setup(context):
     app = {'params_file': params_file, 'sim': 'true', 'area_holes': arg('area_holes'),
            'rviz': arg('rviz'), 'rviz_config': arg('rviz_config'),
            'lat': '', 'lon': '', 'radius': ''}
+    if arg('spawn_x') or arg('spawn_y'):
+        # the NavMap keeps the part of the place where the robot is (by default, where the
+        # playground spawns it: the application reads it from the world)
+        app['navmap_keep'] = '%s,%s' % (arg('spawn_x') or '0', arg('spawn_y') or '0')
     # In this order: the playground's launch makes the world and writes last_world.yaml while it
     # is set up, before the application's is, which reads it
     return [

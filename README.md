@@ -55,9 +55,12 @@ source install/setup.bash
 `bigmap.repos` brings EasyNavigation and `yaets`, NavMap and `easynav_playgrounds`. Two come from the
 `jmguerreroh` forks until their pull requests are merged in EasyNavigation:
 
-- NavMap, branch `fractal-ws` (commit `fdee528`, the article's): `simplify` with `keep_vertices`,
-  `cut_along_lines` and `refine` (NavMap#47), bounds that change from place to place (#46),
-  `navmap_gis_tool` with buildings and `--navmap-out` (#45), geometry patches and chunked RViz meshes.
+- NavMap, branch `bigmap`: `simplify` with `keep_vertices`, `cut_along_lines` and `refine`
+  (NavMap#47), bounds that change from place to place (#46), `navmap_gis_tool` with buildings,
+  `--navmap-out` and `--navmap-keep` (#45), geometry patches and chunked RViz meshes. It is branch
+  `fractal-ws` (commit `fdee528`, the article's) plus `--navmap-keep`, which keeps only the part of
+  the NavMap of a place the robot can reach (without roofs and closed patios); to rebuild exactly
+  what the article measured, check out `fractal-ws`.
 - `easynav_playgrounds`, branch `playground_geo` (`easynav_playground_geo`).
 
 `rolling_rviz_qt.cmake` is explained in [`bigmap_bringup`](bigmap_bringup/README.md#build-ros-2-rolling).

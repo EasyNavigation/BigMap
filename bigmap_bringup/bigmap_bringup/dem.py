@@ -82,6 +82,7 @@ DEM_KEYS = {
     'imagery.url_template', 'imagery.zoom', 'imagery.scale', 'gazebo.export',
     'gazebo.world_template', 'gazebo.world_file', 'gazebo.terrain_dir',
     'gazebo.terrain_resolution', 'gazebo.sea_model', 'sea', 'cache_file', 'easynav.overrides_file',
+    'navmap_keep',
     'navmap_file', 'max_slope_deg',
 }
 DEM_IGNORED_KEYS = {
@@ -150,6 +151,10 @@ def dem_generator_command(p, tool=None):
            '--resolution', repr(float(p.get('grid_resolution', 1.0))),
            '--dem-source', source, '--dem-out', dem_file, '--navmap-out', navmap_file,
            '--max-slope-deg', repr(float(p.get('max_slope_deg', 25.0)))]
+    keep = navmap_keep_of(p)
+    if keep != 'all':
+        # only the part of the NavMap the robot can reach: without roofs and closed patios
+        cmd += ['--navmap-keep', keep]
     if float(p.get('elevation_resolution', 0.0)) > 0.0:
         cmd += ['--dem-data-resolution', repr(float(p['elevation_resolution']))]
     if float(p.get('gps_origin.altitude', 0.0)) != 0.0:
@@ -207,6 +212,19 @@ def dem_generator_command(p, tool=None):
                 '--world-out', os.path.expanduser(str(
                     p.get('gazebo.world_file', '~/.ros/bigmap/gazebo/world.sdf')))]
     return cmd
+
+
+def navmap_keep_of(p):
+    """dem_generator.navmap_keep, checked: 'largest' (the default), 'x,y' or 'all'."""
+    keep = str(p.get('navmap_keep', 'largest')).strip()
+    if keep in ('largest', 'all'):
+        return keep
+    try:
+        x, y = (float(v) for v in keep.split(','))
+    except ValueError:
+        raise RuntimeError("dem_generator.navmap_keep must be largest, all or 'x,y' (metres), "
+                           'not %r' % keep) from None
+    return '%r,%r' % (x, y)
 
 
 def has_sea_floor():
@@ -289,11 +307,17 @@ def area_overrides(area, holes=False):
     (navmap.stl) whose walls are steep NavCels."""
     mesh = 'navmap.stl'
     if holes:
-        for name in ('navmap_ground.stl', 'navmap_holes.stl'):
-            if not os.path.isfile(os.path.join(area['dir'], name)):
-                raise RuntimeError('%s has no %s (made by an older generator): remove the '
-                                   'directory and launch the simulation again' % (area['dir'], name))
-        mesh = 'navmap_ground.stl'
+        missing = [name for name in ('navmap_ground.stl', 'navmap_holes.stl')
+                   if not os.path.isfile(os.path.join(area['dir'], name))]
+        if missing:
+            # an area made by an older generator: its buildings stay blocks (their roofs are not
+            # connected to the ground, and dem_generator.navmap_keep leaves them out)
+            print('bigmap.launch.py: %s has no %s (made by an older generator): the buildings are '
+                  'blocks of the map, not holes; remove the directory and launch the simulation '
+                  'again to have them as holes' % (area['dir'], ' and '.join(missing)))
+            holes = False
+        else:
+            mesh = 'navmap_ground.stl'
     out = {'gazebo.export': False, 'elevation_source': 'mesh',
            'mesh_file': os.path.join(area['dir'], mesh),
            'mesh_world_elevation': float(area['ground_elevation']),
@@ -392,9 +416,28 @@ def geo_sim_info(world, holes=False, path=None):
         raise RuntimeError('%s has no navmap.stl: the world of the simulation is gone or '
                            'incomplete; launch the simulation again' % area['dir'])
     path = path or GEO_LAST_WORLD
-    return {'dem': area_overrides(area, holes=holes), 'robot': 'summit', 'terrain': world['world'],
+    dem = area_overrides(area, holes=holes)
+    spawn = geo_spawn(area['dir'])
+    if spawn:
+        # the NavMap keeps the part where the robot is spawned
+        dem['navmap_keep'] = '%r,%r' % spawn
+    return {'dem': dem, 'robot': 'summit', 'terrain': world['world'],
             'environment': 'land', 'use_sim_time': True, 'simulation': 'easynav_playground_geo',
             'written': time.strftime('%Y-%m-%d %H:%M', time.localtime(os.path.getmtime(path)))}
+
+
+def geo_spawn(world_dir):
+    """(x, y) where easynav_playground_geo spawns the robot by default (its world.yaml), or None."""
+    out = {}
+    try:
+        with open(os.path.join(world_dir, 'world.yaml')) as f:
+            for line in f:
+                if ':' in line and not line.lstrip().startswith('#'):
+                    k, v = line.split(':', 1)
+                    out[k.strip()] = v.strip()
+        return float(out['spawn_x']), float(out['spawn_y'])
+    except (OSError, KeyError, ValueError):
+        return None
 
 
 def read_simulation(holes=False):

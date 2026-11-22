@@ -102,6 +102,10 @@ dem_generator:
                                # launch (two NavCels per grid_resolution cell): what the maps manager
                                # loads (maps_manager_node.bigmap.navmap_path_file, set by the launch)
     max_slope_deg: 25.0        # deg: steeper ground is left out of that NavMap (not traversable)
+    navmap_keep: "largest"     # what of it is kept: largest, its largest connected part; "x,y" (m,
+                               # the DEM's frame), the part there (in a geo simulation, where the
+                               # robot is spawned); all, every cell, also roofs and closed patios
+                               # that are islands the robot cannot reach
 
 # ---------------------------------------------------------------------------------------------
 # 2. MAPS MANAGER = easynav_bigmap_maps_manager/BigMapMapsManager (a NavMap at levels of detail)

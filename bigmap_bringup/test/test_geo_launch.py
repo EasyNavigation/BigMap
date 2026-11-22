@@ -97,6 +97,20 @@ def test_the_playground_is_launched_first_and_the_application_follows_it():
     assert app_args['params_file'].endswith(os.path.join('config', 'params_outdoor.yaml'))
     # the place of the playground is not a place of the application's (it follows the world)
     assert app_args['lat'] == app_args['lon'] == app_args['radius'] == ''
+    # buildings as holes, and the map is the part where the playground spawns the robot (the
+    # application reads it from the world)
+    assert app_args['area_holes'] == 'true' and 'navmap_keep' not in app_args
+
+
+def test_a_spawn_given_is_the_part_of_the_map_kept():
+    needs('easynav_playground_geo')
+    needs('bigmap_bringup')
+    m, ctx = context(world='area', spawn_x='20.5', spawn_y='-7')
+    (_, geo_args), (_, app_args) = includes(m.setup(ctx), ctx)
+    assert geo_args['spawn_x'] == '20.5' and geo_args['spawn_y'] == '-7'
+    assert app_args['navmap_keep'] == '20.5,-7'
+    m, ctx = context(world='area', spawn_y='3')
+    assert includes(m.setup(ctx), ctx)[1][1]['navmap_keep'] == '0,3'
 
 
 def test_a_use_case_whose_map_is_a_saved_navmap_is_refused():
