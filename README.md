@@ -40,12 +40,12 @@ in EasyNavigation:
   cannot have the same package twice). Over `rolling`, the NavMap maps manager has the Fractal
   filter (a merged copy of the map for planning), sensed obstacles at the pose of each cloud and
   `navmap_path_file` without a package; the NavMap planner `map_key`, dense paths from the robot on
-  large NavCels and planner fixes. When those changes and BigMap's plugin (easynav_plugins#183) are
-  merged, `bigmap.repos` takes `EasyNavigation/easynav_plugins`.
+  large NavCels and planner fixes (easynav_plugins#182, #184, #185). When those are merged,
+  `bigmap.repos` takes `EasyNavigation/easynav_plugins`.
 
 - NavMap, branch `bigmap`: `simplify` with `keep_vertices`, `cut_along_lines` and `refine`
   (NavMap#47), bounds that change from place to place (#46), `navmap_gis_tool` with buildings,
-  `--navmap-out` and `--navmap-keep` (#45), geometry patches and chunked RViz meshes. It is branch
+  `--navmap-out` and `--navmap-keep` (#45), geometry patches and chunked RViz meshes (#48). It is branch
   `fractal-ws` (commit `fdee528`, the article's) plus `--navmap-keep`, which keeps only the part of
   the NavMap of a place the robot can reach (without roofs and closed patios); to rebuild exactly
   what the article measured, check out `fractal-ws`.
