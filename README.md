@@ -43,12 +43,13 @@ in EasyNavigation:
   large NavCels and planner fixes (easynav_plugins#182, #184, #185). When those are merged,
   `bigmap.repos` takes `EasyNavigation/easynav_plugins`.
 
-- NavMap, branch `bigmap`: `simplify` with `keep_vertices`, `cut_along_lines` and `refine`
-  (NavMap#47), bounds that change from place to place (#46), `navmap_gis_tool` with buildings,
-  `--navmap-out` and `--navmap-keep` (#45), geometry patches and chunked RViz meshes (#48). It is branch
-  `fractal-ws` (commit `fdee528`, the article's) plus `--navmap-keep`, which keeps only the part of
-  the NavMap of a place the robot can reach (without roofs and closed patios); to rebuild exactly
-  what the article measured, check out `fractal-ws`.
+- NavMap, branch `bigmap`: EasyNavigation/NavMap `rolling`, where what BigMap needs is already
+  merged (`simplify` with `keep_vertices`, `cut_along_lines` and `refine`, NavMap#47; bounds that
+  change from place to place, #46; `navmap_gis_tool` with buildings, `--navmap-out` and
+  `--navmap-keep`, #45), plus geometry patches and chunked RViz meshes (#48, still open), which RViz
+  needs to show large maps and `easynav_plugins` (its Fractal filter) to build. When #48 is merged,
+  `bigmap.repos` takes `EasyNavigation/NavMap`. The article's versions are listed in
+  [bigmap_experiments](https://github.com/jmguerreroh/bigmap_experiments/blob/main/experiments/REPRODUCIBILITY.md).
 - `easynav_playgrounds`, branch `playground_geo` (`easynav_playground_geo`).
 
 `rolling_rviz_qt.cmake` is explained in [`bigmap_bringup`](bigmap_bringup/README.md#build-ros-2-rolling).

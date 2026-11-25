@@ -16,10 +16,9 @@ repositories:
     type: git
     url: https://github.com/jmguerreroh/easynav_plugins.git
     version: bigmap
-  # NavMap: rolling + #45 (buildings, large NavMaps of a place: navmap_gis_tool --navmap-out and
-  # --navmap-keep), #46 (simplify bounds that change from place to place), #47 (keep_vertices,
-  # cut_along_lines, refine), geometry patches and chunked RViz meshes (#48). Branch bigmap: fractal-ws,
-  # the article's (fdee528), plus --navmap-keep. Fork until merged in EasyNavigation/NavMap.
+  # NavMap: EasyNavigation/NavMap rolling (#45, #46 and #47, which BigMap needs, are merged) plus #48
+  # (geometry patches and chunked RViz meshes: large maps in RViz, and easynav_plugins' Fractal filter
+  # needs it to build). Fork until #48 is merged in EasyNavigation/NavMap.
   NavMap:
     type: git
     url: https://github.com/jmguerreroh/NavMap.git
